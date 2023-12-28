@@ -49,13 +49,20 @@ type TCorrectionCheck struct {
 	Total                float64     `json:"total,omitempty"`
 }
 
+func formatMyDate(dt string) string {
+	y := dt[6:]
+	m := dt[3:5]
+	d := dt[0:2]
+	res := y + "." + m + "." + d
+	return res
+}
+
 func main() {
 	f, err := os.Open("checks_header.csv")
 	if err != nil {
 		log.Fatal("не удлась открыть файл заголовков чека", err)
 	}
 	defer f.Close()
-
 	csv_red := csv.NewReader(f)
 	csv_red.FieldsPerRecord = -1
 	csv_red.LazyQuotes = true
@@ -90,9 +97,10 @@ func main() {
 		//}
 		//SNO := line[31]
 		kassir := line[27]
+		kassaName := line[1]
 		fn := line[2]
 		fd := line[5]
-		dateCh := line[6]
+		dateCh := formatMyDate(line[6])
 		typeCheck := line[8]
 		//sum := line[9]
 		nal := strings.ReplaceAll(line[10], ",", ".")
@@ -102,7 +110,11 @@ func main() {
 		//nds20 := line[17]
 		//sumBezNDS := line[32]
 		//countOfPos := line[24]
-		poss := findPositions(fn, fd, dateCh)
+		if fd == "2039" || fd == "2060" || fd == "2040" || fd == "2041" {
+			fmt.Println("пропускаем чек, по которому уже был пробит чек коррекции")
+			continue
+		}
+		poss := findPositions(fn, kassaName, fd, dateCh)
 		if len(poss) > 0 {
 			jsonres := generateCheckCorrection(kassir, dateCh, fd, typeCheck, nal, bez, avance, kred, poss)
 			as_json, err := json.MarshalIndent(jsonres, "", "\t")
@@ -131,7 +143,7 @@ func main() {
 	}
 }
 
-func findPositions(fn, fd, dateCh string) map[int]map[string]string {
+func findPositions(fn, kassaName, fd, dateCh string) map[int]map[string]string {
 	res := make(map[int]map[string]string)
 	f, err := os.Open("checks_poss.csv")
 	if err != nil {
@@ -153,8 +165,9 @@ func findPositions(fn, fd, dateCh string) map[int]map[string]string {
 		if currLine == 1 {
 			continue
 		}
+		currKassaName := line[20]
 		fdCurr := line[7]
-		if fdCurr == fd {
+		if fdCurr == fd && kassaName == currKassaName {
 			currPos++
 			res[currPos] = make(map[string]string)
 			res[currPos]["Name"] = line[0]
@@ -181,7 +194,7 @@ func generateCheckCorrection(kassir, dateCh, fd, typeCheck, nal, bez, avance, kr
 	if typeCheck == "приход" {
 		checkCorr.Type = "sellCorrection"
 	}
-	if typeCheck == "расход" {
+	if typeCheck == "возврат прихода" {
 		checkCorr.Type = "sellReturnCorrection"
 	}
 	checkCorr.CorrectionType = "self"
