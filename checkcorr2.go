@@ -215,21 +215,24 @@ func findPositions(fn, kassaName, fd, dateCh, strNDS20 string) map[int]map[strin
 			res[currPos]["Price"] = strings.ReplaceAll(currPrice, "-", "")
 			currAmount := strings.ReplaceAll(line[3], ",", ".")
 			res[currPos]["Amount"] = strings.ReplaceAll(currAmount, "-", "")
-			res[currPos]["prepaymeny"] = "false"
+			res[currPos]["prepayment"] = "false"
 			summPrepayment := line[8]
 			//summPrepayment := strings.ReplaceAll(line[8], ",", ".")
 			//summPrepayment = strings.TrimSpace(strings.ReplaceAll(summPrepayment, "-", ""))
-			if summPrepayment != "" {
-				res[currPos]["prepaymeny"] = "true"
+			//fmt.Println("prepayment", summPrepayment)
+			if summPrepayment != "" && summPrepayment != "0,00" {
+				//fmt.Println("true")
+				res[currPos]["prepayment"] = "true"
 			}
 			//nds20str := line[12]
 			res[currPos]["taxNDS"] = "none"
 			//fmt.Println("nds20str", nds20str)
 			if strNDS20 != "" && strNDS20 != "0,00" {
 				res[currPos]["taxNDS"] = "vat20"
-				if summPrepayment != "" {
+				if summPrepayment != "" && summPrepayment != "0,00" {
 					res[currPos]["taxNDS"] = "vat120"
 				}
+			}
 		}
 	}
 	//if len(res) > 0 {
@@ -322,7 +325,7 @@ func generateCheckCorrection(kassir, dateCh, fd, typeCheck, nal, bez, avance, kr
 		}
 		newPos.Amount = sch
 		newPos.MeasurementUnit = 0
-		if pos["prepaymeny"] == "true" {
+		if pos["prepayment"] == "true" {
 			newPos.PaymentMethod = "fullPrepayment"
 			newPos.PaymentObject = "payment"
 		} else {
