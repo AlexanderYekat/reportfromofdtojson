@@ -13,6 +13,29 @@ import (
 	"strings"
 )
 
+const COLFD = "FD"
+const COLFN = "FN"
+const COLFP = "FP"
+const COLKASSIR = "kassir"
+const COLKASSA_NAME = "kassaName"
+const COLDATE = "date"
+const COLTYPE = "type"
+const COLNAL = "nal"
+const COLBEZ = "bez"
+const COLAVANCE = "avance"
+const COLCREDIT = "credit"
+const COLOBMEN = "obmen"
+const COLSUMMNDS20 = "summNDS20"
+const COLNAMEGOOD = "name"
+const COLQUANTITY = "quantity"
+const COLPRICE = "price"
+const COLAMOUNT = "amount"
+const COLSUMMPREPAYPOS = "summPrepay"
+const COLPREDMET = "predmet"
+const COLSPOSOB = "sposob"
+const COLSTAVKANDS = "stavkaNDS"
+const COLEDIN = "edin"
+
 var LOGSDIR = "./logs/"
 var filelogmap map[string]*os.File
 var logsmap map[string]*log.Logger
@@ -51,7 +74,7 @@ type TPosition struct {
 	Price           float64  `json:"price,omitempty"`
 	Quantity        float64  `json:"quantity,omitempty"`
 	Amount          float64  `json:"amount,omitempty"`
-	MeasurementUnit int      `json:"measurementUnit,omitempty"`
+	MeasurementUnit string   `json:"measurementUnit,omitempty"`
 	PaymentMethod   string   `json:"paymentMethod,omitempty"`
 	PaymentObject   string   `json:"paymentObject,omitempty"`
 	Tax             *TTaxNDS `json:"tax,omitempty"`
@@ -83,8 +106,41 @@ type TCorrectionCheck struct {
 	Total                float64     `json:"total,omitempty"`
 }
 
+var numColKassir = flag.Int("col_kassir", 27, "колонка фамилии кассира")
+var numColKassaNameCh = flag.Int("colKassaNameCh", 1, "колонка названии кассы")
+var numColFNCh = flag.Int("colFNCh", 2, "колонка номер ФН")
+var numColFDCh = flag.Int("colFDCh", 5, "колонка номер ФД")
+var numColFPCh = flag.Int("colFPCh", -1, "колонка ФП")
+var numColDateCh = flag.Int("colDate", 6, "колонка даты чека")
+var numColType = flag.Int("colType", 8, "колонка типа чека (приход, возврат и прочее)")
+var numColNal = flag.Int("colNal", 10, "колонка суммы наличной оплаты")
+var numColBez = flag.Int("colBez", 11, "колонка суммы безналичной оплаты")
+var numColAv = flag.Int("colAvPay", 13, "колонка сумма зачета аванса")
+var numColCr = flag.Int("colCred", 14, "колонка суммы рассрочки")
+var numColObm = flag.Int("colObm", 15, "колонка суммы встречным представлением")
+var numColSumNDS20 = flag.Int("colSumNDS20", 17, "колонка суммы НДС 20%")
+var numColName = flag.Int("colName", 0, "колонка названия товара")
+var numColQuant = flag.Int("colQuant", 1, "колонка колчиества")
+var numColPrice = flag.Int("colPrice", 2, "колонка цены")
+var numColAmountPos = flag.Int("colAmountPos", 3, "колонка суммы позиции")
+var numColSummPrePay = flag.Int("colSummPrepay", 8, "колонка суммы предоплаты позиции (бред от ОФД контур, по которой можно определить предмет рачсёта платёж)")
+var numColKassaNamePos = flag.Int("colKassaNamePos", 20, "колонка название кассы в таблице товаров")
+var numColFDPos = flag.Int("colFDPos", 7, "колонка ФД в таблице товаров")
+
+var numColPred = flag.Int("colPred", -1, "колонка предмета расчета")
+var numColSpos = flag.Int("colSpos", -1, "колонка способа расчета")
+var numColStavkaNDS = flag.Int("colSatavkaNDS", -1, "колонка ставки НДС")
+var numColEdIzm = flag.Int("colEdIzm", -1, "колонка единицы измерения")
+
+//var numCol = flag.Int("col", -1, "колонка ")
+
+//var numCol = flag.Int("col", -1, "колонка ")
+//var numCol = flag.Int("col", -1, "колонка ")
+
 var email = flag.String("email", "", "email, на которое будут отсылаться все чеки")
 var clearLogsProgramm = flag.Bool("clearlogs", true, "очистить логи программы")
+var CollumnsOfHeadCheck map[string]int
+var CollumnsOfPositionsCheck map[string]int
 
 //var emulation = flag.Bool("emul", false, "эмуляция")
 
@@ -108,6 +164,16 @@ func main() {
 		log.Panic(descrError)
 	}
 	logsmap[LOGINFO].Println(runDescription)
+	//инициализация колонок файлов
+	logsmap[LOGINFO].Println("инициализация номеров колонок")
+	CollumnsOfHeadCheck, CollumnsOfPositionsCheck, descError, err := inicizlizationsCollimns()
+	if err != nil {
+		descrError := fmt.Sprintf("ошибка (%v) инициализации номеров колонок)", descError)
+		logsmap[LOGERROR].Println(descrError)
+		log.Fatal(descrError)
+	}
+	logsmap[LOGINFO].Println(CollumnsOfHeadCheck)
+	logsmap[LOGINFO].Println(CollumnsOfPositionsCheck)
 	//инициализация директории результатов
 	if foundedLogDir, _ := doesFileExist(JSONRES); !foundedLogDir {
 		os.Mkdir(JSONRES, 0777)
@@ -142,28 +208,33 @@ func main() {
 		if currLine == 1 {
 			continue //пропускаем нстроку названий столбцов
 		}
+		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
+		logsmap[LOGINFO].Println(descrInfo)
+		logsmap[LOGINFO].Println(line)
 		//SNO := line[31]
-		kassir := line[27]
-		kassaName := line[1]
-		fn := line[2]
-		fd := line[5]
+		kassir := line[CollumnsOfHeadCheck[COLKASSIR]]
+		kassaName := line[CollumnsOfHeadCheck[COLKASSA_NAME]]
+		fn := line[CollumnsOfHeadCheck[COLFN]]
+		fd := line[CollumnsOfHeadCheck[COLFD]]
 		fp := ""
-		//fp := strings.TrimSpace(line[100])
-		dateCh := formatMyDate(line[6])
-		typeCheck := line[8]
-		//sum := line[9]
-		nal := strings.ReplaceAll(line[10], ",", ".")
+		if CollumnsOfHeadCheck[COLFP] != -1 {
+			fp = line[CollumnsOfHeadCheck[COLFP]]
+		}
+		dateCh := formatMyDate(line[CollumnsOfHeadCheck[COLDATE]])
+		typeCheck := line[CollumnsOfHeadCheck[COLTYPE]]
+		//sum := line[CollumnsOfHeadCheck[COLAMOUNT]]
+		nal := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLNAL]], ",", ".")
 		nal = strings.ReplaceAll(nal, "-", "")
-		bez := strings.ReplaceAll(line[11], ",", ".")
+		bez := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLBEZ]], ",", ".")
 		bez = strings.ReplaceAll(bez, "-", "")
 		//sumpplat := strings.ReplaceAll(line[12], ",", ".")
-		avance := strings.ReplaceAll(line[13], ",", ".")
+		avance := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLAVANCE]], ",", ".")
 		avance = strings.ReplaceAll(avance, "-", "")
-		kred := strings.ReplaceAll(line[14], ",", ".")
+		kred := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLCREDIT]], ",", ".")
 		kred = strings.ReplaceAll(kred, "-", "")
-		obmen := strings.ReplaceAll(line[15], ",", ".")
+		obmen := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLOBMEN]], ",", ".")
 		obmen = strings.ReplaceAll(obmen, "-", "")
-		strNDS20 := line[17]
+		strNDS20 := line[CollumnsOfHeadCheck[COLSUMMNDS20]]
 		//sumBezNDS := line[32]
 		//countOfPos := line[24]
 		//if fd == "2039" || fd == "2060" || fd == "2040" || fd == "2041" || fd == "2330" || fd == "2331" || fd == "2332" {
@@ -172,9 +243,9 @@ func main() {
 		//}
 		//ищем позиции в файле позиций чека, которые бы соответсвовали бы текущеё строке чека //по номеру ФН и названию кассы
 		checkDescrInfo := fmt.Sprintf("(ФД %v (ФП %v) от %v)", fd, fp, dateCh)
-		descrInfo := fmt.Sprintf("для чека ФД %v (ФП %v) от %v ищем позиции", fd, fp, dateCh)
+		descrInfo = fmt.Sprintf("для чека ФД %v (ФП %v) от %v ищем позиции", fd, fp, dateCh)
 		logsmap[LOGINFO].Println(descrInfo)
-		findedPositions := findPositions(fn, kassaName, fd, dateCh, strNDS20)
+		findedPositions := findPositions(fn, kassaName, fd, dateCh, strNDS20, CollumnsOfPositionsCheck)
 		countOfPositions := len(findedPositions)
 		descrInfo = fmt.Sprintf("для чека ФД %v (ФП %v) от %v найдено %v позиций", fd, fp, dateCh, countOfPositions)
 		logsmap[LOGINFO].Println(descrInfo)
@@ -240,7 +311,7 @@ func main() {
 	logsmap[LOGINFO_WITHSTD].Printf("обработано %v из %v чеков", countWritedChecks, countAllChecks)
 }
 
-func findPositions(fn, kassaName, fd, dateCh, strNDS20 string) map[int]map[string]string {
+func findPositions(fn, kassaName, fd, dateCh, strNDS20 string, colOfTable map[string]int) map[int]map[string]string {
 	res := make(map[int]map[string]string)
 	f, err := os.Open(DIRINFILES + "checks_poss.csv")
 	if err != nil {
@@ -262,19 +333,19 @@ func findPositions(fn, kassaName, fd, dateCh, strNDS20 string) map[int]map[strin
 		if currLine == 1 {
 			continue
 		}
-		currKassaName := line[20]
-		fdCurr := line[7]
+		currKassaName := line[colOfTable[COLKASSA_NAME]]
+		fdCurr := line[colOfTable[COLFD]]
 		if fdCurr == fd && kassaName == currKassaName {
 			currPos++
 			res[currPos] = make(map[string]string)
-			res[currPos]["Name"] = line[0]
-			res[currPos]["Quantity"] = strings.ReplaceAll(line[1], ",", ".")
-			currPrice := strings.ReplaceAll(line[2], ",", ".")
+			res[currPos]["Name"] = line[colOfTable[COLNAMEGOOD]]
+			res[currPos]["Quantity"] = strings.ReplaceAll(line[colOfTable[COLQUANTITY]], ",", ".")
+			currPrice := strings.ReplaceAll(line[colOfTable[COLPRICE]], ",", ".")
 			res[currPos]["Price"] = strings.ReplaceAll(currPrice, "-", "")
-			currAmount := strings.ReplaceAll(line[3], ",", ".")
+			currAmount := strings.ReplaceAll(line[colOfTable[COLAMOUNT]], ",", ".")
 			res[currPos]["Amount"] = strings.ReplaceAll(currAmount, "-", "")
 			res[currPos]["prepayment"] = "false"
-			summPrepayment := line[8]
+			summPrepayment := line[colOfTable[COLSUMMPREPAYPOS]]
 			//summPrepayment := strings.ReplaceAll(line[8], ",", ".")
 			//summPrepayment = strings.TrimSpace(strings.ReplaceAll(summPrepayment, "-", ""))
 			//fmt.Println("prepayment", summPrepayment)
@@ -415,7 +486,7 @@ func generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, email, nal, bez,
 			return checkCorr, descrErr, err
 		}
 		newPos.Amount = sch
-		newPos.MeasurementUnit = 0
+		newPos.MeasurementUnit = "piece"
 		if pos["prepayment"] == "true" {
 			newPos.PaymentMethod = "fullPrepayment"
 			newPos.PaymentObject = "payment"
@@ -516,4 +587,41 @@ func intitLog(logFile string, pref string, clearLogs bool) (*os.File, *log.Logge
 	}
 	loger := log.New(multwr, pref+" ", flagsLogs)
 	return f, loger, nil
+}
+
+func inicizlizationsCollimns() (map[string]int, map[string]int, string, error) {
+	resHeaderCollumns := make(map[string]int)
+	resPositionsCollumns := make(map[string]int)
+
+	resHeaderCollumns[COLFD] = *numColFDCh
+	resHeaderCollumns[COLFN] = *numColFNCh
+	resHeaderCollumns[COLFP] = *numColFPCh
+
+	resHeaderCollumns[COLKASSIR] = *numColKassir
+	resHeaderCollumns[COLKASSA_NAME] = *numColKassaNameCh
+	resHeaderCollumns[COLDATE] = *numColDateCh
+	resHeaderCollumns[COLTYPE] = *numColType
+	resHeaderCollumns[COLNAL] = *numColNal
+	resHeaderCollumns[COLBEZ] = *numColBez
+	resHeaderCollumns[COLAVANCE] = *numColAv
+	resHeaderCollumns[COLCREDIT] = *numColCr
+	resHeaderCollumns[COLOBMEN] = *numColObm
+
+	resHeaderCollumns[COLSUMMNDS20] = *numColSumNDS20
+
+	resPositionsCollumns[COLFD] = *numColFDPos
+	resPositionsCollumns[COLNAMEGOOD] = *numColName
+	resPositionsCollumns[COLQUANTITY] = *numColQuant
+	resPositionsCollumns[COLPRICE] = *numColPrice
+	resPositionsCollumns[COLAMOUNT] = *numColAmountPos
+	resPositionsCollumns[COLSUMMPREPAYPOS] = *numColSummPrePay
+	resPositionsCollumns[COLAMOUNT] = *numColAmountPos
+	resPositionsCollumns[COLKASSA_NAME] = *numColKassaNamePos
+
+	resPositionsCollumns[COLPREDMET] = *numColPred
+	resPositionsCollumns[COLSPOSOB] = *numColSpos
+	resPositionsCollumns[COLSTAVKANDS] = *numColStavkaNDS
+	resPositionsCollumns[COLEDIN] = *numColEdIzm
+
+	return resHeaderCollumns, resPositionsCollumns, "", nil
 }
