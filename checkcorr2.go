@@ -19,7 +19,8 @@ const COLFP = "FP"
 const COLKASSIR = "kassir"
 const COLKASSA_NAME = "kassaName"
 const COLDATE = "date"
-const COLTYPE = "type"
+const COLTYPEOPER = "typeOper"
+const COLTYPECHECK = "typeCheck"
 const COLNAL = "nal"
 const COLBEZ = "bez"
 const COLAVANCE = "avance"
@@ -51,8 +52,9 @@ const LOG_PREFIX = "XLSTOJSON"
 
 const JSONRES = "./json/"
 const DIRINFILES = "./infiles/"
+const DIRINFILESANDUNION = "./infiles/union/"
 
-const VERSION_OF_PROGRAM = "2023_01_01_01"
+const VERSION_OF_PROGRAM = "2023_01_03_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 type TClientInfo struct {
@@ -106,13 +108,15 @@ type TCorrectionCheck struct {
 	Total                float64     `json:"total,omitempty"`
 }
 
+var command = flag.String("command", "getjsons", "команды getjsons - получить json команды, union - объединить файлы чеков")
 var numColKassir = flag.Int("col_kassir", 27, "колонка фамилии кассира")
 var numColKassaNameCh = flag.Int("colKassaNameCh", 1, "колонка названии кассы")
 var numColFNCh = flag.Int("colFNCh", 2, "колонка номер ФН")
 var numColFDCh = flag.Int("colFDCh", 5, "колонка номер ФД")
 var numColFPCh = flag.Int("colFPCh", -1, "колонка ФП")
 var numColDateCh = flag.Int("colDate", 6, "колонка даты чека")
-var numColType = flag.Int("colType", 8, "колонка типа чека (приход, возврат и прочее)")
+var numColTypeOper = flag.Int("colTypeOper", 8, "колонка типа чека (приход, возврат и прочее)")
+var numColTypeCheck = flag.Int("colTypeCheck", -1, "колонка типа чека (чек, коррекция и прочее)")
 var numColNal = flag.Int("colNal", 10, "колонка суммы наличной оплаты")
 var numColBez = flag.Int("colBez", 11, "колонка суммы безналичной оплаты")
 var numColAv = flag.Int("colAvPay", 13, "колонка сумма зачета аванса")
@@ -178,6 +182,14 @@ func main() {
 	if foundedLogDir, _ := doesFileExist(JSONRES); !foundedLogDir {
 		os.Mkdir(JSONRES, 0777)
 	}
+	if *command == "union" {
+		logsmap[LOGINFO_WITHSTD].Println("объедиение файлов чеков начато")
+		unuinToHeaderCheckFiles()
+		logsmap[LOGINFO_WITHSTD].Println("объедиение файлов чеков завершено")
+		return
+		//log.Panic("штатная паника")
+	}
+	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий начато")
 	//инициализация входных данных
 	logsmap[LOGINFO].Println("открытие файла списка чеков")
 	f, err := os.Open(DIRINFILES + "checks_header.csv")
@@ -221,7 +233,7 @@ func main() {
 			fp = line[CollumnsOfHeadCheck[COLFP]]
 		}
 		dateCh := formatMyDate(line[CollumnsOfHeadCheck[COLDATE]])
-		typeCheck := line[CollumnsOfHeadCheck[COLTYPE]]
+		typeCheck := line[CollumnsOfHeadCheck[COLTYPEOPER]]
 		//sum := line[CollumnsOfHeadCheck[COLAMOUNT]]
 		nal := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLNAL]], ",", ".")
 		nal = strings.ReplaceAll(nal, "-", "")
@@ -308,6 +320,7 @@ func main() {
 		} //если для чека были найдены позиции
 		//generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, nal, bez, avance, kred, poss)
 	} //перебор чеков
+	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий завершено")
 	logsmap[LOGINFO_WITHSTD].Printf("обработано %v из %v чеков", countWritedChecks, countAllChecks)
 }
 
@@ -509,6 +522,10 @@ func doesFileExist(fullFileName string) (found bool, err error) {
 	return
 }
 func formatMyDate(dt string) string {
+	indOfPoint := strings.Index(dt, ".")
+	if indOfPoint == 4 {
+		return dt
+	}
 	y := dt[6:]
 	m := dt[3:5]
 	d := dt[0:2]
@@ -593,6 +610,7 @@ func inicizlizationsCollimns() (map[string]int, map[string]int, string, error) {
 	resHeaderCollumns := make(map[string]int)
 	resPositionsCollumns := make(map[string]int)
 
+	fmt.Println("*numColFDCh=", *numColFDCh)
 	resHeaderCollumns[COLFD] = *numColFDCh
 	resHeaderCollumns[COLFN] = *numColFNCh
 	resHeaderCollumns[COLFP] = *numColFPCh
@@ -600,7 +618,8 @@ func inicizlizationsCollimns() (map[string]int, map[string]int, string, error) {
 	resHeaderCollumns[COLKASSIR] = *numColKassir
 	resHeaderCollumns[COLKASSA_NAME] = *numColKassaNameCh
 	resHeaderCollumns[COLDATE] = *numColDateCh
-	resHeaderCollumns[COLTYPE] = *numColType
+	resHeaderCollumns[COLTYPEOPER] = *numColTypeOper
+	resHeaderCollumns[COLTYPECHECK] = *numColTypeCheck
 	resHeaderCollumns[COLNAL] = *numColNal
 	resHeaderCollumns[COLBEZ] = *numColBez
 	resHeaderCollumns[COLAVANCE] = *numColAv
@@ -624,4 +643,142 @@ func inicizlizationsCollimns() (map[string]int, map[string]int, string, error) {
 	resPositionsCollumns[COLEDIN] = *numColEdIzm
 
 	return resHeaderCollumns, resPositionsCollumns, "", nil
+}
+
+func unuinToHeaderCheckFiles() {
+	fUnion, err := os.Create(DIRINFILESANDUNION + "checks_header_union.csv")
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header_union.csv) входных данных (шапки чека)", err)
+		logsmap[LOGERROR].Println(descrError)
+		log.Fatal(descrError)
+	}
+	defer fUnion.Close()
+	csv_union := csv.NewWriter(fUnion)
+	csv_union.Comma = ';'
+	defer csv_union.Flush()
+	csv_union.Write([]string{"FN", "KASSA_NAME", "FD", "FP", "KASSIR", "DATE", "TYPE", "TYPEOPERATION", "NAL", "BEZNAL", "AVANCE", "CREDIT", "OBMEN", "SUMMNDS20"})
+	//logsmap[LOGINFO].Println("чтение списка чеков")
+
+	//перебор некорректных чеков
+	f, err := os.Open(DIRINFILESANDUNION + "checks_header_no_correction.csv")
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header_no_correction.csv) входных данных (шапки чека)", err)
+		logsmap[LOGERROR].Println(descrError)
+		log.Fatal(descrError)
+	}
+	defer f.Close()
+	csv_red := csv.NewReader(f)
+	csv_red.FieldsPerRecord = -1
+	csv_red.LazyQuotes = true
+	csv_red.Comma = ';'
+	logsmap[LOGINFO].Println("чтение списка чеков")
+	lines, err := csv_red.ReadAll()
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header_no_correction.csv) входных данных (шапки чека)", err)
+		logsmap[LOGERROR].Println(descrError)
+		log.Fatal(descrError)
+	}
+	//перебор всех строчек файла с шапкоми чеков
+	countWritedChecks := 0
+	countAllChecks := len(lines) - 1
+	logsmap[LOGINFO_WITHSTD].Printf("перебор %v чеков", countAllChecks)
+	currLine := 0
+	for _, line := range lines {
+		currLine++
+		if currLine == 1 {
+			continue //пропускаем нстроку названий столбцов
+		}
+		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
+		logsmap[LOGINFO].Println(descrInfo)
+		logsmap[LOGINFO].Println(line)
+		//SNO := line[31]
+		//kassir := line[CollumnsOfHeadCheck[COLKASSIR]]
+		//kassaName := line[CollumnsOfHeadCheck[COLKASSA_NAME]]
+		fn := line[2]
+		kassa_name := line[1]
+		fd := line[5]
+		kassir := line[27]
+		dateCheck := formatMyDate(line[6])
+		typeCheck := line[3]
+		typeCheckOper := line[8]
+		nal := strings.ReplaceAll(line[10], ",", ".")
+		nal = strings.ReplaceAll(nal, "-", "")
+		bez := strings.ReplaceAll(line[11], ",", ".")
+		bez = strings.ReplaceAll(bez, "-", "")
+		avance := strings.ReplaceAll(line[13], ",", ".")
+		avance = strings.ReplaceAll(avance, "-", "")
+		cred := strings.ReplaceAll(line[14], ",", ".")
+		cred = strings.ReplaceAll(cred, "-", "")
+		obmen := strings.ReplaceAll(line[15], ",", ".")
+		obmen = strings.ReplaceAll(obmen, "-", "")
+		summNDS20 := line[17]
+		//"FN;KASSA_NAME;FD;FP;KASSIR;DATE;TYPE;NAL;BEZNAL;AVANCE;CREDIT;OBMEN;SUMMNDS20;"}
+		//перебор файла всех чеков
+		fieldsValue, derscrError, err := findCheckByRekviz(fd)
+		if err != nil {
+			descrError := fmt.Sprintf("ошибка (%v): не удлаось найти чек %v в файле всех чеков", derscrError, fd)
+			logsmap[LOGERROR].Println(descrError)
+			//log.Fatal(descrError)
+			continue
+		}
+		if len(fieldsValue) == 0 {
+			descrError := fmt.Sprintf("не удлаось найти чек %v в файле всех чеков", fd)
+			logsmap[LOGERROR].Println(descrError)
+			continue
+		}
+		fp := fieldsValue["fp"]
+		csv_union.Write([]string{fn, kassa_name, fd, fp, kassir, dateCheck, typeCheck, typeCheckOper, nal, bez, avance, cred, obmen, summNDS20})
+		countWritedChecks++
+	}
+	logsmap[LOGINFO_WITHSTD].Printf("обработано %v из %v чеков", countWritedChecks, countAllChecks)
+}
+
+func findCheckByRekviz(fd string) (map[string]string, string, error) {
+	var resFieldsValue map[string]string
+	//перебор некорректных чеков
+	f, err := os.Open(DIRINFILESANDUNION + "checks_header_all_checks.csv")
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header_no_correction.csv) входных данных (шапки чека)", err)
+		logsmap[LOGERROR].Println(descrError)
+		log.Fatal(descrError)
+	}
+	defer f.Close()
+	csv_red := csv.NewReader(f)
+	csv_red.FieldsPerRecord = -1
+	csv_red.LazyQuotes = true
+	csv_red.Comma = ';'
+	logsmap[LOGINFO].Println("чтение списка чеков")
+	lines, err := csv_red.ReadAll()
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header.csv) входных данных (шапки чека)", err)
+		logsmap[LOGERROR].Println(descrError)
+		log.Fatal(descrError)
+	}
+	//перебор всех строчек файла с шапкоми чеков
+	//countWritedChecks := 0
+	countAllChecks := len(lines) - 1
+	//logsmap[LOGINFO_WITHSTD].Printf("перебор %v чеков", countAllChecks)
+	currLine := 0
+	for _, line := range lines {
+		currLine++
+		if currLine == 1 {
+			continue //пропускаем нстроку названий столбцов
+		}
+		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
+		logsmap[LOGINFO].Println(descrInfo)
+		logsmap[LOGINFO].Println(line)
+		//SNO := line[31]
+		//kassir := line[CollumnsOfHeadCheck[COLKASSIR]]
+		//kassaName := line[CollumnsOfHeadCheck[COLKASSA_NAME]]
+		//fnCurr := line[2]
+		//kassa_nameCurr := line[1]
+		fdCurr := line[5]
+		if fdCurr == fd {
+			resFieldsValue = make(map[string]string)
+			fp := line[4]
+			resFieldsValue["fp"] = fp
+			break
+		}
+	}
+	return resFieldsValue, "", nil
 }
