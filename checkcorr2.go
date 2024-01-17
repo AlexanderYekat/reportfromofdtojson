@@ -15,6 +15,7 @@ import (
 
 const COLFD = "FD"
 const COLFN = "FN"
+const COLREG = "REG"
 const COLFP = "FP"
 const COLKASSIR = "kassir"
 const COLKASSA_NAME = "kassaName"
@@ -54,7 +55,7 @@ const JSONRES = "./json/"
 const DIRINFILES = "./infiles/"
 const DIRINFILESANDUNION = "./infiles/union/"
 
-const VERSION_OF_PROGRAM = "2023_01_03_01"
+const VERSION_OF_PROGRAM = "2024_01_16_02"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 type TClientInfo struct {
@@ -112,6 +113,7 @@ var command = flag.String("command", "getjsons", "команды getjsons - по
 var numColKassir = flag.Int("col_kassir", 27, "колонка фамилии кассира")
 var numColKassaNameCh = flag.Int("colKassaNameCh", 1, "колонка названии кассы")
 var numColFNCh = flag.Int("colFNCh", 2, "колонка номер ФН")
+var numColRegCh = flag.Int("colRegCh", -1, "колонка регномер кассы")
 var numColFDCh = flag.Int("colFDCh", 5, "колонка номер ФД")
 var numColFPCh = flag.Int("colFPCh", -1, "колонка ФП")
 var numColDateCh = flag.Int("colDate", 6, "колонка даты чека")
@@ -218,15 +220,29 @@ func main() {
 	for _, line := range lines {
 		currLine++
 		if currLine == 1 {
-			continue //пропускаем нстроку названий столбцов
+			continue //пропускаем настройку названий столбцов
 		}
 		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
 		logsmap[LOGINFO].Println(descrInfo)
 		logsmap[LOGINFO].Println(line)
 		//SNO := line[31]
 		kassir := line[CollumnsOfHeadCheck[COLKASSIR]]
-		kassaName := line[CollumnsOfHeadCheck[COLKASSA_NAME]]
+		kassaName := ""
+		if CollumnsOfHeadCheck[COLKASSA_NAME] != -1 {
+			kassaName = line[CollumnsOfHeadCheck[COLKASSA_NAME]]
+		}
 		fn := line[CollumnsOfHeadCheck[COLFN]]
+		reg := ""
+		if CollumnsOfHeadCheck[COLREG] != -1 {
+			reg = line[CollumnsOfHeadCheck[COLREG]]
+		}
+		if kassaName == "" {
+			kassaName = reg
+		}
+		if kassaName == "" {
+			logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не определено название кассы", line)
+			continue
+		}
 		fd := line[CollumnsOfHeadCheck[COLFD]]
 		fp := ""
 		if CollumnsOfHeadCheck[COLFP] != -1 {
@@ -235,17 +251,12 @@ func main() {
 		dateCh := formatMyDate(line[CollumnsOfHeadCheck[COLDATE]])
 		typeCheck := line[CollumnsOfHeadCheck[COLTYPEOPER]]
 		//sum := line[CollumnsOfHeadCheck[COLAMOUNT]]
-		nal := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLNAL]], ",", ".")
-		nal = strings.ReplaceAll(nal, "-", "")
-		bez := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLBEZ]], ",", ".")
-		bez = strings.ReplaceAll(bez, "-", "")
+		nal := formatMyNumber(line[CollumnsOfHeadCheck[COLNAL]])
+		bez := formatMyNumber(line[CollumnsOfHeadCheck[COLBEZ]])
 		//sumpplat := strings.ReplaceAll(line[12], ",", ".")
-		avance := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLAVANCE]], ",", ".")
-		avance = strings.ReplaceAll(avance, "-", "")
-		kred := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLCREDIT]], ",", ".")
-		kred = strings.ReplaceAll(kred, "-", "")
-		obmen := strings.ReplaceAll(line[CollumnsOfHeadCheck[COLOBMEN]], ",", ".")
-		obmen = strings.ReplaceAll(obmen, "-", "")
+		avance := formatMyNumber(line[CollumnsOfHeadCheck[COLAVANCE]])
+		kred := formatMyNumber(line[CollumnsOfHeadCheck[COLCREDIT]])
+		obmen := formatMyNumber(line[CollumnsOfHeadCheck[COLOBMEN]])
 		strNDS20 := line[CollumnsOfHeadCheck[COLSUMMNDS20]]
 		//sumBezNDS := line[32]
 		//countOfPos := line[24]
@@ -259,6 +270,7 @@ func main() {
 		logsmap[LOGINFO].Println(descrInfo)
 		findedPositions := findPositions(fn, kassaName, fd, dateCh, strNDS20, CollumnsOfPositionsCheck)
 		countOfPositions := len(findedPositions)
+		//countOfPositions = 0
 		descrInfo = fmt.Sprintf("для чека ФД %v (ФП %v) от %v найдено %v позиций", fd, fp, dateCh, countOfPositions)
 		logsmap[LOGINFO].Println(descrInfo)
 		if countOfPositions > 0 { //если для чека были найдены позиции
@@ -322,6 +334,7 @@ func main() {
 	} //перебор чеков
 	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий завершено")
 	logsmap[LOGINFO_WITHSTD].Printf("обработано %v из %v чеков", countWritedChecks, countAllChecks)
+	logsmap[LOGINFO_WITHSTD].Println("проверка завершена")
 }
 
 func findPositions(fn, kassaName, fd, dateCh, strNDS20 string, colOfTable map[string]int) map[int]map[string]string {
@@ -346,32 +359,50 @@ func findPositions(fn, kassaName, fd, dateCh, strNDS20 string, colOfTable map[st
 		if currLine == 1 {
 			continue
 		}
-		currKassaName := line[colOfTable[COLKASSA_NAME]]
-		fdCurr := line[colOfTable[COLFD]]
+		fdCurr := ""
+		regCur := ""
+		//fnCurr := ""
+		if colOfTable[COLFD] != -1 {
+			fdCurr = line[colOfTable[COLFD]]
+		}
+		currKassaName := ""
+		if colOfTable[COLREG] != -1 {
+			currKassaName = line[colOfTable[COLKASSA_NAME]]
+		}
+		if fdCurr == "" {
+			descrErr := ""
+			regCur, _, fdCurr, descrErr, err = getRegFnFdFromName(currKassaName)
+			if err != nil {
+				logsmap[LOGERROR].Println(descrErr)
+				log.Fatal("не удалось получить регистрационный номер, номер ФД, ФН из имени кассы", err)
+			}
+			currKassaName = regCur
+		}
 		if fdCurr == fd && kassaName == currKassaName {
 			currPos++
 			res[currPos] = make(map[string]string)
 			res[currPos]["Name"] = line[colOfTable[COLNAMEGOOD]]
-			res[currPos]["Quantity"] = strings.ReplaceAll(line[colOfTable[COLQUANTITY]], ",", ".")
-			currPrice := strings.ReplaceAll(line[colOfTable[COLPRICE]], ",", ".")
-			res[currPos]["Price"] = strings.ReplaceAll(currPrice, "-", "")
-			currAmount := strings.ReplaceAll(line[colOfTable[COLAMOUNT]], ",", ".")
-			res[currPos]["Amount"] = strings.ReplaceAll(currAmount, "-", "")
+			res[currPos]["Quantity"] = formatMyNumber(line[colOfTable[COLQUANTITY]])
+			res[currPos]["Price"] = formatMyNumber(line[colOfTable[COLPRICE]])
+			res[currPos]["Amount"] = formatMyNumber(line[colOfTable[COLAMOUNT]])
 			res[currPos]["prepayment"] = "false"
-			summPrepayment := line[colOfTable[COLSUMMPREPAYPOS]]
+			summPrepayment := ""
+			if colOfTable[COLSUMMPREPAYPOS] != -1 {
+				summPrepayment = line[colOfTable[COLSUMMPREPAYPOS]]
+			}
 			//summPrepayment := strings.ReplaceAll(line[8], ",", ".")
 			//summPrepayment = strings.TrimSpace(strings.ReplaceAll(summPrepayment, "-", ""))
 			//fmt.Println("prepayment", summPrepayment)
-			if summPrepayment != "" && summPrepayment != "0,00" {
+			if summPrepayment != "" && summPrepayment != "0,00" && summPrepayment != "0,00 ₽" {
 				//fmt.Println("true")
 				res[currPos]["prepayment"] = "true"
 			}
 			//nds20str := line[12]
 			res[currPos]["taxNDS"] = "none"
 			//fmt.Println("nds20str", nds20str)
-			if strNDS20 != "" && strNDS20 != "0,00" {
+			if strNDS20 != "" && strNDS20 != "0,00" && strNDS20 != "0,00 ₽" {
 				res[currPos]["taxNDS"] = "vat20"
-				if summPrepayment != "" && summPrepayment != "0,00" {
+				if summPrepayment != "" && summPrepayment != "0,00" && summPrepayment != "0,00 ₽" {
 					res[currPos]["taxNDS"] = "vat120"
 				}
 			}
@@ -389,15 +420,33 @@ func generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, email, nal, bez,
 	var checkCorr TCorrectionCheck
 	strInfoAboutCheck := fmt.Sprintf("(ФД %v, ФП %v %v)", fd, fp, dateCh)
 	checkCorr.Type = ""
+	chekcCorrTypeLoc := ""
+	typeCheck = strings.ToLower(typeCheck)
 	if typeCheck == "приход" {
-		checkCorr.Type = "sellCorrection"
+		chekcCorrTypeLoc = "sellCorrection"
 	}
 	if typeCheck == "возврат прихода" {
-		checkCorr.Type = "sellReturnCorrection"
+		chekcCorrTypeLoc = "sellReturnCorrection"
 	}
 	if typeCheck == "расход" {
-		checkCorr.Type = "buyCorrection"
+		chekcCorrTypeLoc = "buyCorrection"
 	}
+	if typeCheck == "возврат расхода" {
+		chekcCorrTypeLoc = "buyReturnCorrection"
+	}
+	//Кассовый чек. Приход.
+	if chekcCorrTypeLoc == "" {
+		if strings.Contains(typeCheck, "возврат расхода") {
+			chekcCorrTypeLoc = "buyReturnCorrection"
+		} else if strings.Contains(typeCheck, "возврат прихода") {
+			chekcCorrTypeLoc = "sellReturnCorrection"
+		} else if strings.Contains(typeCheck, "приход") {
+			chekcCorrTypeLoc = "sellCorrection"
+		} else if strings.Contains(typeCheck, "расход") {
+			chekcCorrTypeLoc = "buyCorrection"
+		}
+	}
+	checkCorr.Type = chekcCorrTypeLoc
 	if checkCorr.Type == "" {
 		//descError := fmt.Sprintf("ошибка тип чека коррекциии для типа %v - не определён", typeCheck)
 		descError := fmt.Sprintf("ошибка (для типа %v не определён тип чека коррекциии) %v", typeCheck, strInfoAboutCheck)
@@ -522,11 +571,13 @@ func doesFileExist(fullFileName string) (found bool, err error) {
 	return
 }
 func formatMyDate(dt string) string {
+	//28.11.2023
+	//09.01.2024 15:42
 	indOfPoint := strings.Index(dt, ".")
 	if indOfPoint == 4 {
 		return dt
 	}
-	y := dt[6:]
+	y := dt[6:10]
 	m := dt[3:5]
 	d := dt[0:2]
 	res := y + "." + m + "." + d
@@ -610,9 +661,9 @@ func inicizlizationsCollimns() (map[string]int, map[string]int, string, error) {
 	resHeaderCollumns := make(map[string]int)
 	resPositionsCollumns := make(map[string]int)
 
-	fmt.Println("*numColFDCh=", *numColFDCh)
 	resHeaderCollumns[COLFD] = *numColFDCh
 	resHeaderCollumns[COLFN] = *numColFNCh
+	resHeaderCollumns[COLREG] = *numColRegCh
 	resHeaderCollumns[COLFP] = *numColFPCh
 
 	resHeaderCollumns[COLKASSIR] = *numColKassir
@@ -781,4 +832,41 @@ func findCheckByRekviz(fd string) (map[string]string, string, error) {
 		}
 	}
 	return resFieldsValue, "", nil
+}
+
+func getRegFnFdFromName(nameOfKassa string) (reg, fn, fd, desrErr string, err error) {
+	var errLoc error
+	reg = ""
+	fn = ""
+	fd = ""
+	//0006989495006718_7280440500080718_5045
+	indFirstPr := strings.Index(nameOfKassa, "_")
+	if indFirstPr == -1 {
+		desrErr = fmt.Sprintf("не получилось разобрать имя кассы %v. номер ФН и номер ФД не получены", nameOfKassa)
+		errLoc = fmt.Errorf(desrErr)
+		logsmap[LOGERROR].Println(desrErr)
+		return reg, fn, fd, desrErr, errLoc
+	}
+	reg = nameOfKassa[:indFirstPr]
+	indSecondPr := strings.Index(nameOfKassa[indFirstPr+1:], "_")
+	fn = nameOfKassa[indFirstPr+1 : indFirstPr+1+indSecondPr]
+	if indSecondPr == -1 {
+		desrErr = fmt.Sprintf("не получилось разобрать имя кассы %v. номер ФД не получен", nameOfKassa)
+		errLoc = fmt.Errorf(desrErr)
+		logsmap[LOGERROR].Println(desrErr)
+		return reg, fn, fd, desrErr, errLoc
+	}
+	fd = nameOfKassa[indFirstPr+1+indSecondPr+1:]
+	//logsmap[LOGINFO].Printf("получены номер ФН %v, номер ФД %v и регистрационный номер %v из строки %v", fn, fd, reg, nameOfKassa)
+	return reg, fn, fd, "", nil
+}
+
+func formatMyNumber(num string) string {
+	var res string
+	//3 477,00 ₽
+	res = strings.ReplaceAll(num, ",", ".")
+	res = strings.ReplaceAll(res, "-", "")
+	res = strings.ReplaceAll(res, " ", "")
+	res = strings.ReplaceAll(res, " ₽", "")
+	return res
 }
