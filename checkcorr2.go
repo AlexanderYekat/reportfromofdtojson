@@ -18,6 +18,7 @@ const COLFN = "FN"
 const COLREG = "REG"
 const COLFP = "FP"
 const COLKASSIR = "kassir"
+const COLINNKASSIR = "innkassir"
 const COLKASSA_NAME = "kassaName"
 const COLDATE = "date"
 const COLTYPEOPER = "typeOper"
@@ -32,6 +33,7 @@ const COLNAMEGOOD = "name"
 const COLQUANTITY = "quantity"
 const COLPRICE = "price"
 const COLAMOUNT = "amount"
+const COLMARK = "mark"
 const COLSUMMPREPAYPOS = "summPrepay"
 const COLPREDMET = "predmet"
 const COLSPOSOB = "sposob"
@@ -55,7 +57,7 @@ const JSONRES = "./json/"
 const DIRINFILES = "./infiles/"
 const DIRINFILESANDUNION = "./infiles/union/"
 
-const VERSION_OF_PROGRAM = "2024_01_16_02"
+const VERSION_OF_PROGRAM = "2024_01_17_06"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 type TClientInfo struct {
@@ -64,6 +66,9 @@ type TClientInfo struct {
 
 type TTaxNDS struct {
 	Type string `json:"type,omitempty"`
+}
+type TProductCodes struct {
+	Undefined string `json:"undefined,omitempty"` //32 символа только
 }
 
 type TPayment struct {
@@ -82,12 +87,14 @@ type TPosition struct {
 	PaymentObject   string   `json:"paymentObject,omitempty"`
 	Tax             *TTaxNDS `json:"tax,omitempty"`
 	//fot type tag1192 //AdditionalAttribute
-	Value string `json:"value,omitempty"`
-	Print bool   `json:"print,omitempty"`
+	Value        string         `json:"value,omitempty"`
+	Print        bool           `json:"print,omitempty"`
+	ProductCodes *TProductCodes `json:"productCodes,omitempty"`
 }
 
 type TOperator struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Vatin string `json:"vatin,omitempty"`
 }
 
 // При работе по ФФД ≥ 1.1 чеки коррекции имеют вид, аналогичный обычным чекам, но с
@@ -111,6 +118,7 @@ type TCorrectionCheck struct {
 
 var command = flag.String("command", "getjsons", "команды getjsons - получить json команды, union - объединить файлы чеков")
 var numColKassir = flag.Int("col_kassir", 27, "колонка фамилии кассира")
+var numColInnKassir = flag.Int("col_Inn_kassir", -1, "колонка ИНН кассира")
 var numColKassaNameCh = flag.Int("colKassaNameCh", 1, "колонка названии кассы")
 var numColFNCh = flag.Int("colFNCh", 2, "колонка номер ФН")
 var numColRegCh = flag.Int("colRegCh", -1, "колонка регномер кассы")
@@ -127,6 +135,7 @@ var numColObm = flag.Int("colObm", 15, "колонка суммы встречн
 var numColSumNDS20 = flag.Int("colSumNDS20", 17, "колонка суммы НДС 20%")
 var numColName = flag.Int("colName", 0, "колонка названия товара")
 var numColQuant = flag.Int("colQuant", 1, "колонка колчиества")
+var numColMark = flag.Int("colMark", -1, "колонка марок")
 var numColPrice = flag.Int("colPrice", 2, "колонка цены")
 var numColAmountPos = flag.Int("colAmountPos", 3, "колонка суммы позиции")
 var numColSummPrePay = flag.Int("colSummPrepay", 8, "колонка суммы предоплаты позиции (бред от ОФД контур, по которой можно определить предмет рачсёта платёж)")
@@ -227,6 +236,10 @@ func main() {
 		logsmap[LOGINFO].Println(line)
 		//SNO := line[31]
 		kassir := line[CollumnsOfHeadCheck[COLKASSIR]]
+		innkassir := ""
+		if CollumnsOfHeadCheck[COLINNKASSIR] != -1 {
+			innkassir = line[CollumnsOfHeadCheck[COLINNKASSIR]]
+		}
 		kassaName := ""
 		if CollumnsOfHeadCheck[COLKASSA_NAME] != -1 {
 			kassaName = line[CollumnsOfHeadCheck[COLKASSA_NAME]]
@@ -275,7 +288,7 @@ func main() {
 		logsmap[LOGINFO].Println(descrInfo)
 		if countOfPositions > 0 { //если для чека были найдены позиции
 			logsmap[LOGINFO].Println("генерируем json файл")
-			jsonres, descError, err := generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, *email, nal, bez, avance, kred, obmen, findedPositions)
+			jsonres, descError, err := generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, *email, nal, bez, avance, kred, obmen, findedPositions)
 			if err != nil {
 				descrError := fmt.Sprintf("ошибка (%v) полчуение json чека коррекции (%v)", descError, checkDescrInfo)
 				logsmap[LOGERROR].Println(descrError)
@@ -330,7 +343,7 @@ func main() {
 			descrError := fmt.Sprintf("для чека ФД %v (ФП %v) от %v не найдены позиции", fd, fp, dateCh)
 			logsmap[LOGERROR].Println(descrError)
 		} //если для чека были найдены позиции
-		//generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, nal, bez, avance, kred, poss)
+		//generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, nal, bez, avance, kred, poss)
 	} //перебор чеков
 	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий завершено")
 	logsmap[LOGINFO_WITHSTD].Printf("обработано %v из %v чеков", countWritedChecks, countAllChecks)
@@ -379,12 +392,19 @@ func findPositions(fn, kassaName, fd, dateCh, strNDS20 string, colOfTable map[st
 			currKassaName = regCur
 		}
 		if fdCurr == fd && kassaName == currKassaName {
+			logsmap[LOGINFO].Println("Найдена строка", line)
 			currPos++
 			res[currPos] = make(map[string]string)
 			res[currPos]["Name"] = line[colOfTable[COLNAMEGOOD]]
 			res[currPos]["Quantity"] = formatMyNumber(line[colOfTable[COLQUANTITY]])
 			res[currPos]["Price"] = formatMyNumber(line[colOfTable[COLPRICE]])
 			res[currPos]["Amount"] = formatMyNumber(line[colOfTable[COLAMOUNT]])
+			logsmap[LOGINFO].Println("colOfTable[COLMARK]=", colOfTable[COLMARK])
+			if colOfTable[COLMARK] != -1 {
+				res[currPos]["mark"] = line[colOfTable[COLMARK]]
+				logsmap[LOGINFO].Println("res[currPos][\"mark\"]=", line[colOfTable[COLMARK]])
+			}
+
 			res[currPos]["prepayment"] = "false"
 			summPrepayment := ""
 			if colOfTable[COLSUMMPREPAYPOS] != -1 {
@@ -414,8 +434,8 @@ func findPositions(fn, kassaName, fd, dateCh, strNDS20 string, colOfTable map[st
 	return res
 } //findPositions
 
-// func generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, email string, nal, bez, avance, kred float64, poss map[int]map[string]string) TCorrectionCheck {
-func generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, email, nal, bez, avance,
+// func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email string, nal, bez, avance, kred float64, poss map[int]map[string]string) TCorrectionCheck {
+func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email, nal, bez, avance,
 	kred, obmen string, poss map[int]map[string]string) (TCorrectionCheck, string, error) {
 	var checkCorr TCorrectionCheck
 	strInfoAboutCheck := fmt.Sprintf("(ФД %v, ФП %v %v)", fd, fp, dateCh)
@@ -463,6 +483,7 @@ func generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, email, nal, bez,
 	checkCorr.CorrectionBaseNumber = ""
 	checkCorr.ClientInfo.EmailOrPhone = email
 	checkCorr.Operator.Name = kassir
+	checkCorr.Operator.Vatin = innkassir
 	if nal != "" && nal != "0.00" {
 		nalch, err := strconv.ParseFloat(nal, 64)
 		if err != nil {
@@ -524,6 +545,14 @@ func generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, email, nal, bez,
 		newAdditionalAttribute.Print = true
 		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
 	}
+	//в тег 1192 - записываем ФП (если нет ФП, то записываем ФД)
+	if fd != "" {
+		newAdditionalAttribute := TPosition{Type: "userAttribute"}
+		newAdditionalAttribute.Name = "ФД"
+		newAdditionalAttribute.Value = fd
+		newAdditionalAttribute.Print = true
+		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
+	}
 	for _, pos := range poss {
 		newPos := TPosition{Type: "position"}
 		newPos.Name = pos["Name"]
@@ -558,6 +587,14 @@ func generateCheckCorrection(kassir, dateCh, fd, fp, typeCheck, email, nal, bez,
 		}
 		newPos.Tax = new(TTaxNDS)
 		newPos.Tax.Type = pos["taxNDS"]
+		//logsmap[LOGINFO].Println("pos = ", pos)
+		//logsmap[LOGINFO].Println("pos = ", pos)
+		if currMark, ok := pos["mark"]; ok {
+			byte32onlyCut := min(32, len(currMark))
+			logsmap[LOGINFO].Println("mark zap = ", currMark[:byte32onlyCut])
+			newPos.ProductCodes = new(TProductCodes)
+			newPos.ProductCodes.Undefined = currMark[:byte32onlyCut]
+		}
 		checkCorr.Items = append(checkCorr.Items, newPos)
 	} //запись всех позиций чека
 	return checkCorr, "", nil
@@ -667,6 +704,7 @@ func inicizlizationsCollimns() (map[string]int, map[string]int, string, error) {
 	resHeaderCollumns[COLFP] = *numColFPCh
 
 	resHeaderCollumns[COLKASSIR] = *numColKassir
+	resHeaderCollumns[COLINNKASSIR] = *numColInnKassir
 	resHeaderCollumns[COLKASSA_NAME] = *numColKassaNameCh
 	resHeaderCollumns[COLDATE] = *numColDateCh
 	resHeaderCollumns[COLTYPEOPER] = *numColTypeOper
@@ -682,6 +720,7 @@ func inicizlizationsCollimns() (map[string]int, map[string]int, string, error) {
 	resPositionsCollumns[COLFD] = *numColFDPos
 	resPositionsCollumns[COLNAMEGOOD] = *numColName
 	resPositionsCollumns[COLQUANTITY] = *numColQuant
+	resPositionsCollumns[COLMARK] = *numColMark
 	resPositionsCollumns[COLPRICE] = *numColPrice
 	resPositionsCollumns[COLAMOUNT] = *numColAmountPos
 	resPositionsCollumns[COLSUMMPREPAYPOS] = *numColSummPrePay
