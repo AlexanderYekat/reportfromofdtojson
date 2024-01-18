@@ -7,7 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -116,6 +118,55 @@ type TCorrectionCheck struct {
 	Total                float64     `json:"total,omitempty"`
 }
 
+type TReceipt struct {
+	Version  int `json:"Version"`
+	Document struct {
+		// document fields
+		Items []TItem `json:"Items"`
+		// other fields
+	} `json:"Document"`
+}
+
+// ofd.ru
+type TItem struct {
+	Name                      string
+	Price                     int
+	Quantity                  float64
+	Nds18_TotalSumm           float64
+	Nds10_TotalSumm           float64
+	Nds00_TotalSumm           float64
+	NdsNA_TotalSumm           float64
+	Nds18_CalculatedTotalSumm float64
+	Nds10_CalculatedTotalSumm float64
+	Total                     int
+	CalculationMethod         int
+	SubjectType               int
+	ProductCode               TProductCode
+	NDS_PieceSumm             float64
+	NDS_Rate                  int
+	NDS_Summ                  float64
+	ProductUnitOfMeasure      int
+}
+
+type TProductCode struct {
+	Code_Undefined string
+	Code_EAN_8     string
+	Code_EAN_13    string
+	Code_ITF_14    string
+	Code_GS_1      string
+	Code_GS_1M     string
+	Code_KMK       string
+	Code_MI        string
+	Code_EGAIS_2   string
+	Code_EGAIS_3   string
+	Code_F_1       string
+	Code_F_2       string
+	Code_F_3       string
+	Code_F_4       string
+	Code_F_5       string
+	Code_F_6       string
+}
+
 var command = flag.String("command", "getjsons", "команды getjsons - получить json команды, union - объединить файлы чеков")
 var numColKassir = flag.Int("col_kassir", 27, "колонка фамилии кассира")
 var numColInnKassir = flag.Int("col_Inn_kassir", -1, "колонка ИНН кассира")
@@ -160,6 +211,32 @@ var CollumnsOfPositionsCheck map[string]int
 //var emulation = flag.Bool("emul", false, "эмуляция")
 
 func main() {
+	var receipt TReceipt
+	resp, err := http.Get("https://ofd.ru/Document/ReceiptJsonDownload?DocId=289f8926-74f2-b25b-f34a-6edf933b9999")
+	if err != nil {
+		panic(err)
+	}
+
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	//fmt.Println(string(body))
+	err = json.Unmarshal(body, &receipt)
+	fmt.Println("err=", err)
+	if err == nil {
+		for _, item := range receipt.Document.Items {
+			fmt.Println(item.Name)
+			fmt.Println(item.Price)
+			fmt.Println(item.Quantity)
+			fmt.Println(item.ProductCode.Code_GS_1M)
+		}
+	}
+	panic("standart")
+
 	runDescription := fmt.Sprintf("программа %v версии %v", NAME_OF_PROGRAM, VERSION_OF_PROGRAM)
 	fmt.Println(runDescription, "запущена")
 	defer fmt.Println(runDescription, "звершена")
