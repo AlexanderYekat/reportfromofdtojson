@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -13,34 +14,65 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
-const COLFD = "FD"
-const COLFN = "FN"
-const COLREG = "REG"
-const COLFP = "FP"
-const COLKASSIR = "kassir"
-const COLINNKASSIR = "innkassir"
-const COLKASSA_NAME = "kassaName"
-const COLDATE = "date"
-const COLTYPEOPER = "typeOper"
-const COLTYPECHECK = "typeCheck"
+const VERSION_OF_PROGRAM = "2024_01_17_06"
+const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
+
+const EMAILFIELD = "email"
+const NOPRINTFIELD = "electronically"
+
+const COLREGNUMKKT = "regnumkkt"
+const COLFNKKT = "fnkkt"
+const COLNAMEOFKKT = "nameofkkt"
+
+const COLFD = "fd"
+const COLFP = "fp"
 const COLNAL = "nal"
 const COLBEZ = "bez"
-const COLAVANCE = "avance"
 const COLCREDIT = "credit"
-const COLOBMEN = "obmen"
-const COLSUMMNDS20 = "summNDS20"
-const COLNAMEGOOD = "name"
+const COLAVANCE = "avance"
+const COLVSTRECHPREDST = "vstrechpredst"
+const COLKASSIR = "kassir"
+const COLINNKASSIR = "innkassir"
+const COLDATE = "date"
+const COLOSN = "osn"
+const COLTAG1054 = "tag1054"
+const COLTYPECHECK = "typeCheck"
+const COLLINK = "link"
+const COLBINDHEADFIELDKASSA = "bindheadfieldkassa"
+const COLBINDHEADDIELDCHECK = "bindheadfieldcheck"
+
+const COLNAME = "name"
 const COLQUANTITY = "quantity"
 const COLPRICE = "price"
-const COLAMOUNT = "amount"
-const COLMARK = "mark"
-const COLSUMMPREPAYPOS = "summPrepay"
+const COLAMOUNTPOS = "amountpos"
 const COLPREDMET = "predmet"
 const COLSPOSOB = "sposob"
-const COLSTAVKANDS = "stavkaNDS"
-const COLEDIN = "edin"
+
+// const COLSTAVKANDS = "stavkaNDS"
+const COLSTAVKANDS0 = "stavkaNDS"
+const COLSTAVKANDS10 = "stavkaNDS"
+const COLSTAVKANDS20 = "stavkaNDS"
+const COLSTAVKANDS110 = "stavkaNDS"
+const COLSTAVKANDS120 = "stavkaNDS"
+const COLMARK = "mark"
+const COLBINDPOSFIELDKASSA = "bindposfieldkassa"
+const COLBINDPOSFIELDCHECK = "bindposfieldcheck"
+
+const STAVKANDSNONE = "none"
+const STAVKANDS0 = "vat0"
+const STAVKANDS10 = "vat10"
+const STAVKANDS20 = "vat20"
+const STAVKANDS110 = "vat110"
+const STAVKANDS120 = "vat120"
+
+//const COLSUMMNDS20 = "summNDS20"
+//const COLSUMMPREPAYPOS = "summPrepay"
+
+//const COLEDIN = "edin"
 
 var LOGSDIR = "./logs/"
 var filelogmap map[string]*os.File
@@ -58,9 +90,7 @@ const LOG_PREFIX = "XLSTOJSON"
 const JSONRES = "./json/"
 const DIRINFILES = "./infiles/"
 const DIRINFILESANDUNION = "./infiles/union/"
-
-const VERSION_OF_PROGRAM = "2024_01_17_06"
-const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
+const DIROFREQUEST = "./request/"
 
 type TClientInfo struct {
 	EmailOrPhone string `json:"emailOrPhone"`
@@ -71,6 +101,7 @@ type TTaxNDS struct {
 }
 type TProductCodes struct {
 	Undefined string `json:"undefined,omitempty"` //32 символа только
+	Tag1305   string `json:"gs1m,omitempty"`
 }
 
 type TPayment struct {
@@ -92,6 +123,7 @@ type TPosition struct {
 	Value        string         `json:"value,omitempty"`
 	Print        bool           `json:"print,omitempty"`
 	ProductCodes *TProductCodes `json:"productCodes,omitempty"`
+	ImcParams    *TImcParams    `json:"imcParams,omitempty"`
 }
 
 type TOperator struct {
@@ -118,6 +150,7 @@ type TCorrectionCheck struct {
 	Total                float64     `json:"total,omitempty"`
 }
 
+// json чека в ОФД.RU
 type TReceipt struct {
 	Version  int `json:"Version"`
 	Document struct {
@@ -126,11 +159,9 @@ type TReceipt struct {
 		// other fields
 	} `json:"Document"`
 }
-
-// ofd.ru
 type TItem struct {
 	Name                      string
-	Price                     int
+	Price                     float64
 	Quantity                  float64
 	Nds18_TotalSumm           float64
 	Nds10_TotalSumm           float64
@@ -138,7 +169,7 @@ type TItem struct {
 	NdsNA_TotalSumm           float64
 	Nds18_CalculatedTotalSumm float64
 	Nds10_CalculatedTotalSumm float64
-	Total                     int
+	Total                     float64
 	CalculationMethod         int
 	SubjectType               int
 	ProductCode               TProductCode
@@ -147,7 +178,6 @@ type TItem struct {
 	NDS_Summ                  float64
 	ProductUnitOfMeasure      int
 }
-
 type TProductCode struct {
 	Code_Undefined string
 	Code_EAN_8     string
@@ -167,76 +197,42 @@ type TProductCode struct {
 	Code_F_6       string
 }
 
-var command = flag.String("command", "getjsons", "команды getjsons - получить json команды, union - объединить файлы чеков")
-var numColKassir = flag.Int("col_kassir", 27, "колонка фамилии кассира")
-var numColInnKassir = flag.Int("col_Inn_kassir", -1, "колонка ИНН кассира")
-var numColKassaNameCh = flag.Int("colKassaNameCh", 1, "колонка названии кассы")
-var numColFNCh = flag.Int("colFNCh", 2, "колонка номер ФН")
-var numColRegCh = flag.Int("colRegCh", -1, "колонка регномер кассы")
-var numColFDCh = flag.Int("colFDCh", 5, "колонка номер ФД")
-var numColFPCh = flag.Int("colFPCh", -1, "колонка ФП")
-var numColDateCh = flag.Int("colDate", 6, "колонка даты чека")
-var numColTypeOper = flag.Int("colTypeOper", 8, "колонка типа чека (приход, возврат и прочее)")
-var numColTypeCheck = flag.Int("colTypeCheck", -1, "колонка типа чека (чек, коррекция и прочее)")
-var numColNal = flag.Int("colNal", 10, "колонка суммы наличной оплаты")
-var numColBez = flag.Int("colBez", 11, "колонка суммы безналичной оплаты")
-var numColAv = flag.Int("colAvPay", 13, "колонка сумма зачета аванса")
-var numColCr = flag.Int("colCred", 14, "колонка суммы рассрочки")
-var numColObm = flag.Int("colObm", 15, "колонка суммы встречным представлением")
-var numColSumNDS20 = flag.Int("colSumNDS20", 17, "колонка суммы НДС 20%")
-var numColName = flag.Int("colName", 0, "колонка названия товара")
-var numColQuant = flag.Int("colQuant", 1, "колонка колчиества")
-var numColMark = flag.Int("colMark", -1, "колонка марок")
-var numColPrice = flag.Int("colPrice", 2, "колонка цены")
-var numColAmountPos = flag.Int("colAmountPos", 3, "колонка суммы позиции")
-var numColSummPrePay = flag.Int("colSummPrepay", 8, "колонка суммы предоплаты позиции (бред от ОФД контур, по которой можно определить предмет рачсёта платёж)")
-var numColKassaNamePos = flag.Int("colKassaNamePos", 20, "колонка название кассы в таблице товаров")
-var numColFDPos = flag.Int("colFDPos", 7, "колонка ФД в таблице товаров")
+type TItemInfoCheckResult struct {
+	ImcCheckFlag              bool `json:"imcCheckFlag"`
+	ImcCheckResult            bool `json:"imcCheckResult"`
+	ImcStatusInfo             bool `json:"imcStatusInfo"`
+	ImcEstimatedStatusCorrect bool `json:"imcEstimatedStatusCorrect"`
+	EcrStandAloneFlag         bool `json:"ecrStandAloneFlag"`
+}
 
-var numColPred = flag.Int("colPred", -1, "колонка предмета расчета")
-var numColSpos = flag.Int("colSpos", -1, "колонка способа расчета")
-var numColStavkaNDS = flag.Int("colSatavkaNDS", -1, "колонка ставки НДС")
-var numColEdIzm = flag.Int("colEdIzm", -1, "колонка единицы измерения")
+type TImcParams struct {
+	ImcType             string                `json:"imcType"`
+	Imc                 string                `json:"ims"`
+	ItemEstimatedStatus string                `json:"itemEstimatedStatus"`
+	ImcModeProcessing   int                   `json:"imcModeProcessing"`
+	ImcBarcode          string                `json:"imcBarcode,omitempty"`
+	ItemInfoCheckResult *TItemInfoCheckResult `json:"itemInfoCheckResult,omitempty"`
+	ItemQuantity        float64               `json:"itemQuantity,omitempty"`
+	ItemUnits           string                `json:"itemUnits,omitempty"`
+}
 
-//var numCol = flag.Int("col", -1, "колонка ")
-
-//var numCol = flag.Int("col", -1, "колонка ")
-//var numCol = flag.Int("col", -1, "колонка ")
-
-var email = flag.String("email", "", "email, на которое будут отсылаться все чеки")
 var clearLogsProgramm = flag.Bool("clearlogs", true, "очистить логи программы")
-var CollumnsOfHeadCheck map[string]int
-var CollumnsOfPositionsCheck map[string]int
 
-//var emulation = flag.Bool("emul", false, "эмуляция")
+var ofdtemplate = flag.String("ofdtemplate", "ofd.ru", "шаблон ОФД: ofd.ru, 1-ofd.ru, kontur.ru")
+var email = flag.String("email", "", "email, на которое будут отсылаться все чеки")
+var noprint = flag.Bool("noprint", false, "печатать на бумагу (false) или не печатать (true) чек коорекции")
+var GradeDetailedMark = flag.Int("gradesimplymark", 1, "уровень простоты вставки марки в чек коррекции. 0-не вставлять, 1 - в тег 1300, 2 - в тег 1305, 3 - вставка полной структура марки со всеми сопутсвующими тегами, 4 - всатвка со всеми полями единиц")
 
+var FieldsNums map[string]int
+var FieldsNames map[string]string
+var OFD string
+var AllFieldsHeadOfCheck []string
+var AllFieldPositionsOfCheck []string
+
+// var emulation = flag.Bool("emul", false, "эмуляция")
 func main() {
-	var receipt TReceipt
-	resp, err := http.Get("https://ofd.ru/Document/ReceiptJsonDownload?DocId=289f8926-74f2-b25b-f34a-6edf933b9999")
-	if err != nil {
-		panic(err)
-	}
-
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-
-	//fmt.Println(string(body))
-	err = json.Unmarshal(body, &receipt)
-	fmt.Println("err=", err)
-	if err == nil {
-		for _, item := range receipt.Document.Items {
-			fmt.Println(item.Name)
-			fmt.Println(item.Price)
-			fmt.Println(item.Quantity)
-			fmt.Println(item.ProductCode.Code_GS_1M)
-		}
-	}
-	panic("standart")
-
+	var data map[string]interface{}
+	var ofdmap interface{}
 	runDescription := fmt.Sprintf("программа %v версии %v", NAME_OF_PROGRAM, VERSION_OF_PROGRAM)
 	fmt.Println(runDescription, "запущена")
 	defer fmt.Println(runDescription, "звершена")
@@ -258,24 +254,39 @@ func main() {
 	logsmap[LOGINFO].Println(runDescription)
 	//инициализация колонок файлов
 	logsmap[LOGINFO].Println("инициализация номеров колонок")
-	CollumnsOfHeadCheck, CollumnsOfPositionsCheck, descError, err := inicizlizationsCollimns()
-	if err != nil {
-		descrError := fmt.Sprintf("ошибка (%v) инициализации номеров колонок)", descError)
-		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
+	//читаем файл настроек
+	if _, err := toml.DecodeFile("init.toml", &data); err != nil {
+		fmt.Println(err)
+		panic(err)
 	}
-	logsmap[LOGINFO].Println(CollumnsOfHeadCheck)
-	logsmap[LOGINFO].Println(CollumnsOfPositionsCheck)
+	ofdmap = data["template"].(map[string]interface{})["ofd"]
+	for k, v := range ofdmap.(map[string]interface{}) {
+		if *ofdtemplate == fmt.Sprint(v) || *ofdtemplate == k {
+			OFD = k
+			break
+		}
+	}
+	if OFD == "" {
+		log.Fatal("не найден шаблон ОФД")
+	}
+	fmt.Println("шаблон ОФД", OFD)
+	FieldsNums = make(map[string]int)
+	FieldsNames = make(map[string]string)
+	for k, v := range data[OFD].(map[string]interface{}) {
+		FieldsNames[k] = fmt.Sprint(v)
+	}
+	for k := range data["fields"].(map[string]interface{})["kkt"].(map[string]interface{}) {
+		AllFieldsHeadOfCheck = append(AllFieldsHeadOfCheck, k)
+	}
+	for k := range data["fields"].(map[string]interface{})["check"].(map[string]interface{}) {
+		AllFieldsHeadOfCheck = append(AllFieldsHeadOfCheck, k)
+	}
+	for k := range data["fields"].(map[string]interface{})["positions"].(map[string]interface{}) {
+		AllFieldPositionsOfCheck = append(AllFieldPositionsOfCheck, k)
+	}
 	//инициализация директории результатов
 	if foundedLogDir, _ := doesFileExist(JSONRES); !foundedLogDir {
 		os.Mkdir(JSONRES, 0777)
-	}
-	if *command == "union" {
-		logsmap[LOGINFO_WITHSTD].Println("объедиение файлов чеков начато")
-		unuinToHeaderCheckFiles()
-		logsmap[LOGINFO_WITHSTD].Println("объедиение файлов чеков завершено")
-		return
-		//log.Panic("штатная паника")
 	}
 	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий начато")
 	//инициализация входных данных
@@ -296,8 +307,17 @@ func main() {
 	if err != nil {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header.csv) входных данных (шапки чека)", err)
 		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
+		panic(descrError)
 	}
+	//инициализация номеров колонок
+	if len(lines) > 0 {
+		FieldsNums = getNumberOfFieldsInCSV(lines[0], FieldsNames, FieldsNums, true)
+	}
+	fillFieldsNumByPositionTable(FieldsNames, FieldsNums)
+	//fmt.Println("FieldsNames", FieldsNames)
+	//fmt.Println("-------------------")
+	//fmt.Println("FieldsNums", FieldsNums)
+	//panic("ok")
 	//перебор всех строчек файла с шапкоми чеков
 	countWritedChecks := 0
 	countAllChecks := len(lines) - 1
@@ -311,61 +331,155 @@ func main() {
 		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
 		logsmap[LOGINFO].Println(descrInfo)
 		logsmap[LOGINFO].Println(line)
-		//SNO := line[31]
-		kassir := line[CollumnsOfHeadCheck[COLKASSIR]]
-		innkassir := ""
-		if CollumnsOfHeadCheck[COLINNKASSIR] != -1 {
-			innkassir = line[CollumnsOfHeadCheck[COLINNKASSIR]]
+		//заполняема поля шапки
+		HeadOfCheck := make(map[string]string)
+		for _, field := range AllFieldsHeadOfCheck {
+			if !isInvField(FieldsNames[field]) {
+				HeadOfCheck[field] = getfieldval(line, FieldsNums, field)
+			}
 		}
-		kassaName := ""
-		if CollumnsOfHeadCheck[COLKASSA_NAME] != -1 {
-			kassaName = line[CollumnsOfHeadCheck[COLKASSA_NAME]]
+		//заполняем поля шапки с префиксом inv - те эти поля будут - это значения полей позиций
+		for _, field := range AllFieldPositionsOfCheck {
+			if isInvField(FieldsNames[field]) {
+				HeadOfCheck["inv$"+field] = getfieldval(line, FieldsNums, field)
+			}
 		}
-		fn := line[CollumnsOfHeadCheck[COLFN]]
-		reg := ""
-		if CollumnsOfHeadCheck[COLREG] != -1 {
-			reg = line[CollumnsOfHeadCheck[COLREG]]
-		}
-		if kassaName == "" {
-			kassaName = reg
-		}
-		if kassaName == "" {
-			logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не определено название кассы", line)
+		if HeadOfCheck[COLBINDHEADFIELDKASSA] == "" {
+			logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не опредлена касса", line)
 			continue
 		}
-		fd := line[CollumnsOfHeadCheck[COLFD]]
-		fp := ""
-		if CollumnsOfHeadCheck[COLFP] != -1 {
-			fp = line[CollumnsOfHeadCheck[COLFP]]
-		}
-		dateCh := formatMyDate(line[CollumnsOfHeadCheck[COLDATE]])
-		typeCheck := line[CollumnsOfHeadCheck[COLTYPEOPER]]
-		//sum := line[CollumnsOfHeadCheck[COLAMOUNT]]
-		nal := formatMyNumber(line[CollumnsOfHeadCheck[COLNAL]])
-		bez := formatMyNumber(line[CollumnsOfHeadCheck[COLBEZ]])
-		//sumpplat := strings.ReplaceAll(line[12], ",", ".")
-		avance := formatMyNumber(line[CollumnsOfHeadCheck[COLAVANCE]])
-		kred := formatMyNumber(line[CollumnsOfHeadCheck[COLCREDIT]])
-		obmen := formatMyNumber(line[CollumnsOfHeadCheck[COLOBMEN]])
-		strNDS20 := line[CollumnsOfHeadCheck[COLSUMMNDS20]]
-		//sumBezNDS := line[32]
-		//countOfPos := line[24]
-		//if fd == "2039" || fd == "2060" || fd == "2040" || fd == "2041" || fd == "2330" || fd == "2331" || fd == "2332" {
-		//	fmt.Println("пропускаем чек, по которому уже был пробит чек коррекции")
-		//	continue
-		//}
+		HeadOfCheck[EMAILFIELD] = *email
+		HeadOfCheck[NOPRINTFIELD] = fmt.Sprint(*noprint)
+		valbindkassa := HeadOfCheck[COLBINDHEADFIELDKASSA]
+		valbindcheck := HeadOfCheck[COLBINDHEADDIELDCHECK]
 		//ищем позиции в файле позиций чека, которые бы соответсвовали бы текущеё строке чека //по номеру ФН и названию кассы
-		checkDescrInfo := fmt.Sprintf("(ФД %v (ФП %v) от %v)", fd, fp, dateCh)
-		descrInfo = fmt.Sprintf("для чека ФД %v (ФП %v) от %v ищем позиции", fd, fp, dateCh)
+		checkDescrInfo := fmt.Sprintf("(ФД %v (ФП %v) от %v)", HeadOfCheck[COLFD], HeadOfCheck[COLFP], HeadOfCheck[COLDATE])
+		descrInfo = fmt.Sprintf("для чека %v ищем позиции", checkDescrInfo)
 		logsmap[LOGINFO].Println(descrInfo)
-		findedPositions := findPositions(fn, kassaName, fd, dateCh, strNDS20, CollumnsOfPositionsCheck)
+		findedPositions, summsOfPayment := findPositions(valbindkassa, valbindcheck, FieldsNames, FieldsNums)
+		//fmt.Println("------------------------------")
+		//fmt.Println("HeadOfCheck", HeadOfCheck)
+		//fmt.Println("------------------------------")
+		//fmt.Println("findedPositions", findedPositions)
+		//fmt.Println("------------------------------")
+		//panic("ok1")
 		countOfPositions := len(findedPositions)
-		//countOfPositions = 0
-		descrInfo = fmt.Sprintf("для чека ФД %v (ФП %v) от %v найдено %v позиций", fd, fp, dateCh, countOfPositions)
+		descrInfo = fmt.Sprintf("для чека %v найдено %v позиций", checkDescrInfo, countOfPositions)
+		//декопзируем head and postions
+		//invDecopostions(HeadOfCheck, findedPositions, FieldsNames, FieldsNums)
+		for fieldHead, valFieldHead := range HeadOfCheck {
+			if isInvField(fieldHead) { //переносим его в findedPositions
+				for _, pos := range findedPositions {
+					fieldnameclear, _ := strings.CutPrefix(fieldHead, "inv$")
+					pos[fieldnameclear] = valFieldHead
+				}
+			}
+		}
+		for _, pos := range findedPositions {
+			for fieldPos, valFieldPos := range pos {
+				if isInvField(fieldPos) { //переносим его в HeadOfCheck
+					fieldnameclear, _ := strings.CutPrefix(fieldPos, "inv$")
+					HeadOfCheck[fieldnameclear] = valFieldPos
+				}
+			}
+			break
+		}
+		//fmt.Println("------------------------------")
+		//fmt.Println("summsOfPayment", summsOfPayment)
+		//fmt.Println("HeadOfCheck", HeadOfCheck)
+		//fmt.Println("------------------------------")
+		//перенгоси суммы оплат из позиций, если сумма оплат была указана у позиций
+		for k, v := range summsOfPayment {
+			HeadOfCheck[k] = strconv.FormatFloat(v, 'f', -1, 64)
+		}
+		//fmt.Println("*****************************")
+		//fmt.Println("HeadOfCheck", HeadOfCheck)
+		//fmt.Println("------------------------------")
+		//fmt.Println("findedPositions", findedPositions)
+		//fmt.Println("------------------------------")
+		//panic("ok")
 		logsmap[LOGINFO].Println(descrInfo)
+		//производим сложный анализ
+		analyzeComlite := true
 		if countOfPositions > 0 { //если для чека были найдены позиции
+			neededGetMarks := false
+			for _, pos := range findedPositions {
+				if (pos[COLPREDMET] == "ТМ") || (pos[COLPREDMET] == "АТМ") {
+					neededGetMarks = true
+					break
+				}
+			}
+			if neededGetMarks {
+				fmt.Println(checkDescrInfo, "полчаем json для марки")
+				var receipt TReceipt
+				var descrErr string
+				var err error
+				receiptGetted := false
+				if alredyGettedFetch(HeadOfCheck[COLFD], HeadOfCheck[COLFP]) {
+					fmt.Println("уже был запрос")
+					logsmap[LOGINFO].Println("полученный файл уже обработан")
+					receipt, descrErr, err = getRecitpFromDisk(HeadOfCheck[COLFD], HeadOfCheck[COLFP])
+					if err == nil {
+						receiptGetted = true
+						fmt.Println("прочитали сохранённый запрос")
+					} else {
+						fmt.Println("не удалось прочиать сохранённый запрос")
+						logsmap[LOGERROR].Println(descrErr)
+					}
+				}
+				if !receiptGetted {
+					fmt.Println("отрпавим сейчас запрос на сервер ОФД")
+					logsmap[LOGINFO].Println("анализируем поле", FieldsNames[COLLINK])
+					logsmap[LOGINFO].Println("анализируем значение", HeadOfCheck[COLLINK])
+					hypperlinkjson := replacefieldbyjsonhrep(HeadOfCheck[COLLINK])
+					fmt.Println("hypperlinkjson", hypperlinkjson)
+					receipt, descrErr, err = fetchcheck(hypperlinkjson)
+					if err != nil {
+						logsmap[LOGERROR].Println(descrErr)
+						analyzeComlite = false
+						break
+					}
+					saveReceiptToDisk(HeadOfCheck[COLFD], HeadOfCheck[COLFP], receipt)
+					fmt.Println("receipt", receipt)
+					fmt.Println("сохраняем запрос в файл")
+				}
+				//записваем значение марки
+				fmt.Println("записваем значение марки")
+				fmt.Println("findedPositions", findedPositions)
+				fmt.Println("------------------")
+				for _, itemPos := range receipt.Document.Items {
+					fmt.Printf("itemPos =%v.\n", itemPos.Name)
+					fmt.Printf("Code_GS_1M=%v.\n", itemPos.ProductCode.Code_GS_1M)
+					if itemPos.ProductCode.Code_GS_1M == "" {
+						continue
+					}
+					for _, posFined := range findedPositions {
+						fmt.Printf("posFined=%v.\n", posFined[COLNAME])
+						if strings.EqualFold(strings.ToLower(itemPos.Name), strings.ToLower(posFined[COLNAME])) {
+							fmt.Println("нашли позицию", itemPos.Name)
+							posFined[COLMARK] = itemPos.ProductCode.Code_GS_1M
+							break
+						}
+					}
+					analyzeComlite = true
+				}
+				fmt.Println("------------------")
+				fmt.Println("findedPositions", findedPositions)
+				fmt.Println("------------------****************")
+			}
+		}
+		if (countOfPositions > 0) && analyzeComlite { //если для чека были найдены позиции
 			logsmap[LOGINFO].Println("генерируем json файл")
-			jsonres, descError, err := generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, *email, nal, bez, avance, kred, obmen, findedPositions)
+			//jsonres, descError, err := generateCheckCorrection(headOfCheckkassir, innkassir, dateCh, fd, fp, typeCheck, *email, nal, bez, avance, kred, obmen, findedPositions)
+			jsonres, descError, err := generateCheckCorrection(HeadOfCheck, findedPositions)
+			for k, v := range jsonres.Items {
+				fmt.Println("name", v.Name)
+				fmt.Println("k", k)
+				fmt.Println("v", v)
+				fmt.Println(v.ImcParams)
+				//fmt.Println(v.ImcParams.Imc)
+			}
+			fmt.Println("jsonres", jsonres)
 			if err != nil {
 				descrError := fmt.Sprintf("ошибка (%v) полчуение json чека коррекции (%v)", descError, checkDescrInfo)
 				logsmap[LOGERROR].Println(descrError)
@@ -378,8 +492,7 @@ func main() {
 				logsmap[LOGERROR].Println(descrError)
 				continue //пропускаем чек
 			}
-			//logsmap[LOGINFO].Println(as_json)
-			dir_file_name := fmt.Sprintf("%v%v/", JSONRES, fn)
+			dir_file_name := fmt.Sprintf("%v%v/", JSONRES, HeadOfCheck[COLFNKKT])
 			if foundedLogDir, _ := doesFileExist(dir_file_name); !foundedLogDir {
 				logsmap[LOGINFO].Println("генерируем папку результатов, если раньше она не была сгенерирована")
 				os.Mkdir(dir_file_name, 0777)
@@ -392,7 +505,7 @@ func main() {
 					f.Close()
 				}
 			}
-			file_name := fmt.Sprintf("%v%v/%v_%v.json", JSONRES, fn, fn, fd)
+			file_name := fmt.Sprintf("%v%v/%v_%v.json", JSONRES, HeadOfCheck[COLFNKKT], HeadOfCheck[COLFNKKT], HeadOfCheck[COLFD])
 			f, err := os.Create(file_name)
 			if err != nil {
 				descrError := fmt.Sprintf("ошибка (%v) создания файла json чека (%v)", err, checkDescrInfo)
@@ -408,27 +521,47 @@ func main() {
 			}
 			f.Close()
 			countWritedChecks++
-			//flagsTempOpen := os.O_APPEND | os.O_CREATE | os.O_WRONLY
-			//file_name_all_json := fmt.Sprintf("%v.json", fn)
-			//file_all_json, err := os.OpenFile(file_name_all_json, flagsTempOpen, 0644)
-			//if err != nil {
-			//	fmt.Println("ошибка", err)
-			//}
-			//file_all_json.Write(as_json)
-			//file_all_json.Close()
+			panic("ok2")
 		} else {
-			descrError := fmt.Sprintf("для чека ФД %v (ФП %v) от %v не найдены позиции", fd, fp, dateCh)
-			logsmap[LOGERROR].Println(descrError)
+			if analyzeComlite {
+				descrError := fmt.Sprintf("для чека %v не найдены позиции", checkDescrInfo)
+				logsmap[LOGERROR].Println(descrError)
+			} else {
+				descrError := fmt.Sprintf("для чека %v не получилось произвести анализ (получить марку)", checkDescrInfo)
+				logsmap[LOGERROR].Println(descrError)
+			}
 		} //если для чека были найдены позиции
-		//generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, nal, bez, avance, kred, poss)
 	} //перебор чеков
 	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий завершено")
 	logsmap[LOGINFO_WITHSTD].Printf("обработано %v из %v чеков", countWritedChecks, countAllChecks)
 	logsmap[LOGINFO_WITHSTD].Println("проверка завершена")
 }
 
-func findPositions(fn, kassaName, fd, dateCh, strNDS20 string, colOfTable map[string]int) map[int]map[string]string {
+func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[string]int) error {
+	f, err := os.Open(DIRINFILES + "checks_poss.csv")
+	if err != nil {
+		log.Fatal("не удлась открыть файл позиций чека", err)
+	}
+	defer f.Close()
+	csv_red := csv.NewReader(f)
+	csv_red.FieldsPerRecord = -1
+	csv_red.LazyQuotes = true
+	csv_red.Comma = ';'
+	lines, err := csv_red.ReadAll()
+	if err != nil {
+		log.Fatal("не удлась прочитать csv файл позиций чека", err)
+	}
+	if len(lines) > 0 {
+		getNumberOfFieldsInCSV(lines[0], fieldsnames, fieldsnums, false)
+	}
+	return nil
+}
+
+func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames map[string]string, fieldsnums map[string]int) (map[int]map[string]string, map[string]float64) {
+	//fmt.Println("valbindkassainhead", valbindkassainhead)
+	//fmt.Println("valbindcheckinhead", valbindcheckinhead)
 	res := make(map[int]map[string]string)
+	summsPayment := make(map[string]float64)
 	f, err := os.Open(DIRINFILES + "checks_poss.csv")
 	if err != nil {
 		log.Fatal("не удлась открыть файл позиций чека", err)
@@ -446,79 +579,57 @@ func findPositions(fn, kassaName, fd, dateCh, strNDS20 string, colOfTable map[st
 	currLine := 0
 	for _, line := range lines { //перебор всех строк в файле позиций чека
 		currLine++
+		//fmt.Println(line)
 		if currLine == 1 {
 			continue
 		}
-		fdCurr := ""
-		regCur := ""
-		//fnCurr := ""
-		if colOfTable[COLFD] != -1 {
-			fdCurr = line[colOfTable[COLFD]]
+		valbindkassainpos := getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
+		valbindcheckpos := getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
+		if (valbindkassainhead != valbindkassainpos) || (valbindcheckinhead != valbindcheckpos) {
+			continue
 		}
-		currKassaName := ""
-		if colOfTable[COLREG] != -1 {
-			currKassaName = line[colOfTable[COLKASSA_NAME]]
-		}
-		if fdCurr == "" {
-			descrErr := ""
-			regCur, _, fdCurr, descrErr, err = getRegFnFdFromName(currKassaName)
-			if err != nil {
-				logsmap[LOGERROR].Println(descrErr)
-				log.Fatal("не удалось получить регистрационный номер, номер ФД, ФН из имени кассы", err)
-			}
-			currKassaName = regCur
-		}
-		if fdCurr == fd && kassaName == currKassaName {
-			logsmap[LOGINFO].Println("Найдена строка", line)
-			currPos++
-			res[currPos] = make(map[string]string)
-			res[currPos]["Name"] = line[colOfTable[COLNAMEGOOD]]
-			res[currPos]["Quantity"] = formatMyNumber(line[colOfTable[COLQUANTITY]])
-			res[currPos]["Price"] = formatMyNumber(line[colOfTable[COLPRICE]])
-			res[currPos]["Amount"] = formatMyNumber(line[colOfTable[COLAMOUNT]])
-			logsmap[LOGINFO].Println("colOfTable[COLMARK]=", colOfTable[COLMARK])
-			if colOfTable[COLMARK] != -1 {
-				res[currPos]["mark"] = line[colOfTable[COLMARK]]
-				logsmap[LOGINFO].Println("res[currPos][\"mark\"]=", line[colOfTable[COLMARK]])
-			}
-
-			res[currPos]["prepayment"] = "false"
-			summPrepayment := ""
-			if colOfTable[COLSUMMPREPAYPOS] != -1 {
-				summPrepayment = line[colOfTable[COLSUMMPREPAYPOS]]
-			}
-			//summPrepayment := strings.ReplaceAll(line[8], ",", ".")
-			//summPrepayment = strings.TrimSpace(strings.ReplaceAll(summPrepayment, "-", ""))
-			//fmt.Println("prepayment", summPrepayment)
-			if summPrepayment != "" && summPrepayment != "0,00" && summPrepayment != "0,00 ₽" {
-				//fmt.Println("true")
-				res[currPos]["prepayment"] = "true"
-			}
-			//nds20str := line[12]
-			res[currPos]["taxNDS"] = "none"
-			//fmt.Println("nds20str", nds20str)
-			if strNDS20 != "" && strNDS20 != "0,00" && strNDS20 != "0,00 ₽" {
-				res[currPos]["taxNDS"] = "vat20"
-				if summPrepayment != "" && summPrepayment != "0,00" && summPrepayment != "0,00 ₽" {
-					res[currPos]["taxNDS"] = "vat120"
+		logsmap[LOGINFO].Println("Найдена строка", line)
+		currPos++
+		res[currPos] = make(map[string]string)
+		for _, field := range AllFieldsHeadOfCheck {
+			if isInvField(fieldsnames[field]) {
+				curValOfField := getfieldval(line, fieldsnums, field)
+				curValOfField = strings.TrimSpace(curValOfField)
+				res[currPos]["inv$"+field] = curValOfField
+				//получаем суммы оплат
+				if field == COLNAL || field == COLBEZ || field == COLAVANCE || field == COLCREDIT ||
+					field == COLVSTRECHPREDST {
+					if notEmptyFloatField(curValOfField) {
+						currSumm, errDescr, err := getFloatFromStr(getfieldval(line, fieldsnums, COLAMOUNTPOS))
+						if err != nil {
+							logsmap[LOGERROR].Println(errDescr, line)
+							continue
+						}
+						summsPayment[field] = summsPayment[field] + currSumm
+					}
 				}
 			}
 		}
+		for _, field := range AllFieldPositionsOfCheck {
+			if !isInvField(fieldsnames[field]) {
+				res[currPos][field] = getfieldval(line, fieldsnums, field)
+			}
+		}
+		//for k := range FieldsNums {
+		//	res[currPos][k] = getfieldval(line, fieldsnums, k)
+		//}
 	} //перебор всех строк в файле позиций чека
 	//if len(res) > 0 {
 	//fmt.Println(res)
 	//}
-	return res
+	return res, summsPayment
 } //findPositions
 
-// func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email string, nal, bez, avance, kred float64, poss map[int]map[string]string) TCorrectionCheck {
-func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email, nal, bez, avance,
-	kred, obmen string, poss map[int]map[string]string) (TCorrectionCheck, string, error) {
+func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[string]string) (TCorrectionCheck, string, error) {
 	var checkCorr TCorrectionCheck
-	strInfoAboutCheck := fmt.Sprintf("(ФД %v, ФП %v %v)", fd, fp, dateCh)
-	checkCorr.Type = ""
+	strInfoAboutCheck := fmt.Sprintf("(ФД %v, ФП %v %v)", headofcheck[COLFD], headofcheck[COLFP], headofcheck[COLDATE])
 	chekcCorrTypeLoc := ""
-	typeCheck = strings.ToLower(typeCheck)
+	typeCheck := strings.ToLower(headofcheck[COLTAG1054])
 	if typeCheck == "приход" {
 		chekcCorrTypeLoc = "sellCorrection"
 	}
@@ -545,23 +656,25 @@ func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email
 	}
 	checkCorr.Type = chekcCorrTypeLoc
 	if checkCorr.Type == "" {
-		//descError := fmt.Sprintf("ошибка тип чека коррекциии для типа %v - не определён", typeCheck)
 		descError := fmt.Sprintf("ошибка (для типа %v не определён тип чека коррекциии) %v", typeCheck, strInfoAboutCheck)
 		logsmap[LOGERROR].Println(descError)
 		return checkCorr, descError, errors.New("ошибка определения типа чека коррекции")
 	}
-	if email == "" {
+	//strconv.ParseBool
+	checkCorr.Electronically, _ = strconv.ParseBool(headofcheck[NOPRINTFIELD])
+	if headofcheck[EMAILFIELD] == "" {
 		checkCorr.Electronically = false
 	} else {
 		checkCorr.Electronically = true
 	}
 	checkCorr.CorrectionType = "self"
-	checkCorr.CorrectionBaseDate = dateCh
+	checkCorr.CorrectionBaseDate = headofcheck[COLDATE]
 	checkCorr.CorrectionBaseNumber = ""
-	checkCorr.ClientInfo.EmailOrPhone = email
-	checkCorr.Operator.Name = kassir
-	checkCorr.Operator.Vatin = innkassir
-	if nal != "" && nal != "0.00" {
+	checkCorr.ClientInfo.EmailOrPhone = headofcheck[EMAILFIELD]
+	checkCorr.Operator.Name = headofcheck[COLKASSIR]
+	checkCorr.Operator.Vatin = headofcheck[COLINNKASSIR]
+	nal := headofcheck[COLNAL]
+	if notEmptyFloatField(nal) {
 		nalch, err := strconv.ParseFloat(nal, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для налчиного расчёта %v", err, nal, strInfoAboutCheck)
@@ -571,7 +684,8 @@ func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email
 		pay := TPayment{Type: "cash", Sum: nalch}
 		checkCorr.Payments = append(checkCorr.Payments, pay)
 	}
-	if bez != "" && bez != "0.00" {
+	bez := headofcheck[COLBEZ]
+	if notEmptyFloatField(bez) {
 		bezch, err := strconv.ParseFloat(bez, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для безналичного расчёта %v", err, bez, strInfoAboutCheck)
@@ -581,7 +695,8 @@ func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email
 		pay := TPayment{Type: "electronically", Sum: bezch}
 		checkCorr.Payments = append(checkCorr.Payments, pay)
 	}
-	if avance != "" && avance != "0.00" {
+	avance := headofcheck[COLAVANCE]
+	if notEmptyFloatField(avance) {
 		avancech, err := strconv.ParseFloat(avance, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для суммы зачета аванса %v", err, avance, strInfoAboutCheck)
@@ -591,7 +706,8 @@ func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email
 		pay := TPayment{Type: "prepaid", Sum: avancech}
 		checkCorr.Payments = append(checkCorr.Payments, pay)
 	}
-	if kred != "" && kred != "0.00" {
+	kred := headofcheck[COLCREDIT]
+	if notEmptyFloatField(kred) {
 		kredch, err := strconv.ParseFloat(kred, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для суммы оплаты в рассрочку %v", err, kred, strInfoAboutCheck)
@@ -601,7 +717,8 @@ func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email
 		pay := TPayment{Type: "credit", Sum: kredch}
 		checkCorr.Payments = append(checkCorr.Payments, pay)
 	}
-	if obmen != "" && obmen != "0.00" {
+	obmen := headofcheck[COLVSTRECHPREDST]
+	if notEmptyFloatField(obmen) {
 		obmench, err := strconv.ParseFloat(obmen, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для суммы оплаты встречным представлением %v", err, obmen, strInfoAboutCheck)
@@ -611,9 +728,9 @@ func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email
 		pay := TPayment{Type: "other", Sum: obmench}
 		checkCorr.Payments = append(checkCorr.Payments, pay)
 	}
-	currFP := fp
+	currFP := headofcheck[COLFP]
 	if currFP == "" {
-		currFP = fd
+		currFP = headofcheck[COLFD]
 	}
 	//в тег 1192 - записываем ФП (если нет ФП, то записываем ФД)
 	if currFP != "" {
@@ -622,60 +739,92 @@ func generateCheckCorrection(kassir, innkassir, dateCh, fd, fp, typeCheck, email
 		newAdditionalAttribute.Print = true
 		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
 	}
-	//в тег 1192 - записываем ФП (если нет ФП, то записываем ФД)
-	if fd != "" {
+	if headofcheck[COLFD] != "" {
 		newAdditionalAttribute := TPosition{Type: "userAttribute"}
 		newAdditionalAttribute.Name = "ФД"
-		newAdditionalAttribute.Value = fd
+		newAdditionalAttribute.Value = headofcheck[COLFD]
 		newAdditionalAttribute.Print = true
 		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
 	}
 	for _, pos := range poss {
 		newPos := TPosition{Type: "position"}
-		newPos.Name = pos["Name"]
-		qch, err := strconv.ParseFloat(pos["Quantity"], 64)
+		newPos.Name = pos[COLNAME]
+		qch, err := strconv.ParseFloat(pos[COLQUANTITY], 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v количества %v", err, pos["Quantity"], strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
 			return checkCorr, descrErr, err
 		}
 		newPos.Quantity = qch
-		prch, err := strconv.ParseFloat(pos["Price"], 64)
+		prch, err := strconv.ParseFloat(pos[COLPRICE], 64)
 		if err != nil {
-			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v цены %v", err, pos["Price"], strInfoAboutCheck)
+			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v цены %v", err, pos[COLPRICE], strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
 			return checkCorr, descrErr, err
 		}
 		newPos.Price = prch
-		sch, err := strconv.ParseFloat(pos["Amount"], 64)
+		sch, err := strconv.ParseFloat(pos[COLAMOUNTPOS], 64)
 		if err != nil {
-			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы %v", err, pos["Amount"], strInfoAboutCheck)
+			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы %v", err, pos[COLAMOUNTPOS], strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
 			return checkCorr, descrErr, err
 		}
 		newPos.Amount = sch
 		newPos.MeasurementUnit = "piece"
-		if pos["prepayment"] == "true" {
-			newPos.PaymentMethod = "fullPrepayment"
-			newPos.PaymentObject = "payment"
-		} else {
-			newPos.PaymentMethod = "fullPayment"
-			newPos.PaymentObject = "commodity"
-		}
+		newPos.PaymentMethod = getSposobRash(pos[COLSPOSOB])
+		//commodityWithMarking
+		newPos.PaymentObject = getPredmRasch(pos[COLPREDMET])
 		newPos.Tax = new(TTaxNDS)
-		newPos.Tax.Type = pos["taxNDS"]
-		//logsmap[LOGINFO].Println("pos = ", pos)
-		//logsmap[LOGINFO].Println("pos = ", pos)
-		if currMark, ok := pos["mark"]; ok {
-			byte32onlyCut := min(32, len(currMark))
-			logsmap[LOGINFO].Println("mark zap = ", currMark[:byte32onlyCut])
-			newPos.ProductCodes = new(TProductCodes)
-			newPos.ProductCodes.Undefined = currMark[:byte32onlyCut]
+		newPos.Tax.Type = STAVKANDSNONE
+		if pos[COLSTAVKANDS20] != "" {
+			newPos.Tax.Type = STAVKANDS20
+		} else if pos[COLSTAVKANDS10] != "" {
+			newPos.Tax.Type = STAVKANDS10
+		} else if pos[COLSTAVKANDS0] != "" {
+			newPos.Tax.Type = STAVKANDS0
+		} else if pos[COLSTAVKANDS120] != "" {
+			newPos.Tax.Type = STAVKANDS120
+		} else if pos[COLSTAVKANDS110] != "" {
+			newPos.Tax.Type = STAVKANDS110
+		}
+		if pos[COLMARK] != "" {
+			currMark := pos[COLMARK]
+			if *GradeDetailedMark == 1 {
+				byte32onlyCut := min(32, len(currMark))
+				newPos.ProductCodes = new(TProductCodes)
+				newPos.ProductCodes.Undefined = currMark[:byte32onlyCut]
+			} else if *GradeDetailedMark == 2 {
+				newPos.ProductCodes = new(TProductCodes)
+				newPos.ProductCodes.Tag1305 = currMark
+			} else if *GradeDetailedMark == 3 || *GradeDetailedMark == 4 {
+				currMarkInBase64 := base64.StdEncoding.EncodeToString([]byte(currMark))
+				newPos.ImcParams = new(TImcParams)
+				newPos.ImcParams.ImcType = "auto"
+				newPos.ImcParams.Imc = currMarkInBase64
+				itemPieceSold := "itemPieceSold"
+				if headofcheck[COLTAG1054] == "sellReturnCorrection" {
+					itemPieceSold = "itemPieceReturn"
+				}
+				newPos.ImcParams.ItemEstimatedStatus = itemPieceSold
+				newPos.ImcParams.ItemUnits = "piece"
+				newPos.ImcParams.ImcModeProcessing = 0
+				//newPos.ImcParams.ImcBarcode
+				if *GradeDetailedMark == 4 {
+					newPos.ImcParams.ItemQuantity = newPos.Quantity
+					newPos.ImcParams.ItemInfoCheckResult = new(TItemInfoCheckResult)
+					newPos.ImcParams.ItemInfoCheckResult.ImcCheckFlag = true
+					newPos.ImcParams.ItemInfoCheckResult.ImcCheckResult = true
+					newPos.ImcParams.ItemInfoCheckResult.ImcStatusInfo = true
+					newPos.ImcParams.ItemInfoCheckResult.ImcEstimatedStatusCorrect = true
+					newPos.ImcParams.ItemInfoCheckResult.EcrStandAloneFlag = false
+				}
+			}
 		}
 		checkCorr.Items = append(checkCorr.Items, newPos)
 	} //запись всех позиций чека
 	return checkCorr, "", nil
 }
+
 func doesFileExist(fullFileName string) (found bool, err error) {
 	found = false
 	if _, err = os.Stat(fullFileName); err == nil {
@@ -687,6 +836,11 @@ func doesFileExist(fullFileName string) (found bool, err error) {
 func formatMyDate(dt string) string {
 	//28.11.2023
 	//09.01.2024 15:42
+	//2023-11-09 - офд.ru
+	if OFD == "ofdru" {
+		res := strings.ReplaceAll(dt, "-", ".")
+		return res
+	}
 	indOfPoint := strings.Index(dt, ".")
 	if indOfPoint == 4 {
 		return dt
@@ -771,185 +925,6 @@ func intitLog(logFile string, pref string, clearLogs bool) (*os.File, *log.Logge
 	return f, loger, nil
 }
 
-func inicizlizationsCollimns() (map[string]int, map[string]int, string, error) {
-	resHeaderCollumns := make(map[string]int)
-	resPositionsCollumns := make(map[string]int)
-
-	resHeaderCollumns[COLFD] = *numColFDCh
-	resHeaderCollumns[COLFN] = *numColFNCh
-	resHeaderCollumns[COLREG] = *numColRegCh
-	resHeaderCollumns[COLFP] = *numColFPCh
-
-	resHeaderCollumns[COLKASSIR] = *numColKassir
-	resHeaderCollumns[COLINNKASSIR] = *numColInnKassir
-	resHeaderCollumns[COLKASSA_NAME] = *numColKassaNameCh
-	resHeaderCollumns[COLDATE] = *numColDateCh
-	resHeaderCollumns[COLTYPEOPER] = *numColTypeOper
-	resHeaderCollumns[COLTYPECHECK] = *numColTypeCheck
-	resHeaderCollumns[COLNAL] = *numColNal
-	resHeaderCollumns[COLBEZ] = *numColBez
-	resHeaderCollumns[COLAVANCE] = *numColAv
-	resHeaderCollumns[COLCREDIT] = *numColCr
-	resHeaderCollumns[COLOBMEN] = *numColObm
-
-	resHeaderCollumns[COLSUMMNDS20] = *numColSumNDS20
-
-	resPositionsCollumns[COLFD] = *numColFDPos
-	resPositionsCollumns[COLNAMEGOOD] = *numColName
-	resPositionsCollumns[COLQUANTITY] = *numColQuant
-	resPositionsCollumns[COLMARK] = *numColMark
-	resPositionsCollumns[COLPRICE] = *numColPrice
-	resPositionsCollumns[COLAMOUNT] = *numColAmountPos
-	resPositionsCollumns[COLSUMMPREPAYPOS] = *numColSummPrePay
-	resPositionsCollumns[COLAMOUNT] = *numColAmountPos
-	resPositionsCollumns[COLKASSA_NAME] = *numColKassaNamePos
-
-	resPositionsCollumns[COLPREDMET] = *numColPred
-	resPositionsCollumns[COLSPOSOB] = *numColSpos
-	resPositionsCollumns[COLSTAVKANDS] = *numColStavkaNDS
-	resPositionsCollumns[COLEDIN] = *numColEdIzm
-
-	return resHeaderCollumns, resPositionsCollumns, "", nil
-}
-
-func unuinToHeaderCheckFiles() {
-	fUnion, err := os.Create(DIRINFILESANDUNION + "checks_header_union.csv")
-	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header_union.csv) входных данных (шапки чека)", err)
-		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
-	}
-	defer fUnion.Close()
-	csv_union := csv.NewWriter(fUnion)
-	csv_union.Comma = ';'
-	defer csv_union.Flush()
-	csv_union.Write([]string{"FN", "KASSA_NAME", "FD", "FP", "KASSIR", "DATE", "TYPE", "TYPEOPERATION", "NAL", "BEZNAL", "AVANCE", "CREDIT", "OBMEN", "SUMMNDS20"})
-	//logsmap[LOGINFO].Println("чтение списка чеков")
-
-	//перебор некорректных чеков
-	f, err := os.Open(DIRINFILESANDUNION + "checks_header_no_correction.csv")
-	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header_no_correction.csv) входных данных (шапки чека)", err)
-		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
-	}
-	defer f.Close()
-	csv_red := csv.NewReader(f)
-	csv_red.FieldsPerRecord = -1
-	csv_red.LazyQuotes = true
-	csv_red.Comma = ';'
-	logsmap[LOGINFO].Println("чтение списка чеков")
-	lines, err := csv_red.ReadAll()
-	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header_no_correction.csv) входных данных (шапки чека)", err)
-		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
-	}
-	//перебор всех строчек файла с шапкоми чеков
-	countWritedChecks := 0
-	countAllChecks := len(lines) - 1
-	logsmap[LOGINFO_WITHSTD].Printf("перебор %v чеков", countAllChecks)
-	currLine := 0
-	for _, line := range lines {
-		currLine++
-		if currLine == 1 {
-			continue //пропускаем нстроку названий столбцов
-		}
-		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
-		logsmap[LOGINFO].Println(descrInfo)
-		logsmap[LOGINFO].Println(line)
-		//SNO := line[31]
-		//kassir := line[CollumnsOfHeadCheck[COLKASSIR]]
-		//kassaName := line[CollumnsOfHeadCheck[COLKASSA_NAME]]
-		fn := line[2]
-		kassa_name := line[1]
-		fd := line[5]
-		kassir := line[27]
-		dateCheck := formatMyDate(line[6])
-		typeCheck := line[3]
-		typeCheckOper := line[8]
-		nal := strings.ReplaceAll(line[10], ",", ".")
-		nal = strings.ReplaceAll(nal, "-", "")
-		bez := strings.ReplaceAll(line[11], ",", ".")
-		bez = strings.ReplaceAll(bez, "-", "")
-		avance := strings.ReplaceAll(line[13], ",", ".")
-		avance = strings.ReplaceAll(avance, "-", "")
-		cred := strings.ReplaceAll(line[14], ",", ".")
-		cred = strings.ReplaceAll(cred, "-", "")
-		obmen := strings.ReplaceAll(line[15], ",", ".")
-		obmen = strings.ReplaceAll(obmen, "-", "")
-		summNDS20 := line[17]
-		//"FN;KASSA_NAME;FD;FP;KASSIR;DATE;TYPE;NAL;BEZNAL;AVANCE;CREDIT;OBMEN;SUMMNDS20;"}
-		//перебор файла всех чеков
-		fieldsValue, derscrError, err := findCheckByRekviz(fd)
-		if err != nil {
-			descrError := fmt.Sprintf("ошибка (%v): не удлаось найти чек %v в файле всех чеков", derscrError, fd)
-			logsmap[LOGERROR].Println(descrError)
-			//log.Fatal(descrError)
-			continue
-		}
-		if len(fieldsValue) == 0 {
-			descrError := fmt.Sprintf("не удлаось найти чек %v в файле всех чеков", fd)
-			logsmap[LOGERROR].Println(descrError)
-			continue
-		}
-		fp := fieldsValue["fp"]
-		csv_union.Write([]string{fn, kassa_name, fd, fp, kassir, dateCheck, typeCheck, typeCheckOper, nal, bez, avance, cred, obmen, summNDS20})
-		countWritedChecks++
-	}
-	logsmap[LOGINFO_WITHSTD].Printf("обработано %v из %v чеков", countWritedChecks, countAllChecks)
-}
-
-func findCheckByRekviz(fd string) (map[string]string, string, error) {
-	var resFieldsValue map[string]string
-	//перебор некорректных чеков
-	f, err := os.Open(DIRINFILESANDUNION + "checks_header_all_checks.csv")
-	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header_no_correction.csv) входных данных (шапки чека)", err)
-		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
-	}
-	defer f.Close()
-	csv_red := csv.NewReader(f)
-	csv_red.FieldsPerRecord = -1
-	csv_red.LazyQuotes = true
-	csv_red.Comma = ';'
-	logsmap[LOGINFO].Println("чтение списка чеков")
-	lines, err := csv_red.ReadAll()
-	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header.csv) входных данных (шапки чека)", err)
-		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
-	}
-	//перебор всех строчек файла с шапкоми чеков
-	//countWritedChecks := 0
-	countAllChecks := len(lines) - 1
-	//logsmap[LOGINFO_WITHSTD].Printf("перебор %v чеков", countAllChecks)
-	currLine := 0
-	for _, line := range lines {
-		currLine++
-		if currLine == 1 {
-			continue //пропускаем нстроку названий столбцов
-		}
-		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
-		logsmap[LOGINFO].Println(descrInfo)
-		logsmap[LOGINFO].Println(line)
-		//SNO := line[31]
-		//kassir := line[CollumnsOfHeadCheck[COLKASSIR]]
-		//kassaName := line[CollumnsOfHeadCheck[COLKASSA_NAME]]
-		//fnCurr := line[2]
-		//kassa_nameCurr := line[1]
-		fdCurr := line[5]
-		if fdCurr == fd {
-			resFieldsValue = make(map[string]string)
-			fp := line[4]
-			resFieldsValue["fp"] = fp
-			break
-		}
-	}
-	return resFieldsValue, "", nil
-}
-
 func getRegFnFdFromName(nameOfKassa string) (reg, fn, fd, desrErr string, err error) {
 	var errLoc error
 	reg = ""
@@ -984,5 +959,292 @@ func formatMyNumber(num string) string {
 	res = strings.ReplaceAll(res, "-", "")
 	res = strings.ReplaceAll(res, " ", "")
 	res = strings.ReplaceAll(res, " ₽", "")
+	res = strings.ReplaceAll(res, " р", "")
 	return res
+}
+
+func getNumberOfFieldsInCSVloc(line []string, fieldsnames map[string]string, fieldsnums map[string]int, fieldsOfBlock []string, notinv bool) map[string]int {
+	for _, name := range fieldsOfBlock {
+		colname := fieldsnames[name]
+		if notinv && isInvField(colname) {
+			continue
+		}
+		if !notinv && !isInvField(colname) {
+			continue
+		}
+		colnamefinding := colname
+		if len(colname) == 0 {
+			continue
+		}
+		if strings.Contains(colname, "$") && colname[:1] == "#" && len(colname) > 2 { //есть какие-то служебные
+			posEndServiceWords := strings.Index(colname, "$")
+			colnamefinding = colname[posEndServiceWords+1:]
+		}
+		if (name == "bindheadfieldkassa") || (name == "bindheadfieldcheck") {
+			colnamefinding = fieldsnames[fieldsnames[name]]
+		}
+		for i, val := range line {
+			valformated := formatfieldname(val)
+			if valformated == colnamefinding {
+				fieldsnums[name] = i
+				break
+			}
+		}
+	}
+	return fieldsnums
+}
+
+func getNumberOfFieldsInCSV(line []string, fieldsnames map[string]string, fieldsnums map[string]int, headAndNotOfPositions bool) map[string]int {
+	var fieldsOfBlock []string
+	if headAndNotOfPositions {
+		fieldsOfBlock = AllFieldsHeadOfCheck
+	} else {
+		fieldsOfBlock = AllFieldPositionsOfCheck
+	}
+	fieldsnums = getNumberOfFieldsInCSVloc(line, fieldsnames, fieldsnums, fieldsOfBlock, true)
+	if headAndNotOfPositions {
+		fieldsOfBlock = AllFieldPositionsOfCheck
+	} else {
+		fieldsOfBlock = AllFieldsHeadOfCheck
+	}
+	fieldsnums = getNumberOfFieldsInCSVloc(line, fieldsnames, fieldsnums, fieldsOfBlock, false)
+	return fieldsnums
+}
+
+func formatfieldname(name string) string {
+	res := strings.ReplaceAll(name, "\r\n", " ")
+	res = strings.ReplaceAll(res, "\n", " ")
+	res = strings.ReplaceAll(res, "\r", " ")
+	res = strings.TrimSpace(res)
+	return res
+}
+
+func getfieldval(line []string, fieldsnum map[string]int, name string) string {
+	var num int
+	var ok bool
+	if num, ok = fieldsnum[name]; !ok {
+		return ""
+	}
+	//pref := ""
+	//if strings.Contains(FieldsNames[name], "inv") { //значение этого столбца находится в другой таблице
+	//	pref = "inv$"
+	//}
+	resVal := line[num]
+	if name == "date" {
+		resVal = formatMyDate(resVal)
+	}
+	if name == "amountCheck" || name == "nal" || name == "bez" || name == "credit" ||
+		name == "avance" || name == "vstrechpredst" || name == "quantity" ||
+		name == "price" || name == "amountpos" {
+		resVal = formatMyNumber(resVal) //преобразование к формату для чисел
+	}
+	if strings.Contains(name, "stavkaNDS") {
+		if notEmptyFloatField(resVal) {
+			switch name {
+			case "stavkaNDS0":
+				resVal = STAVKANDS0
+			case "stavkaNDS10":
+				resVal = STAVKANDS10
+			case "stavkaNDS20":
+				resVal = STAVKANDS20
+			case "stavkaNDS110":
+				resVal = STAVKANDS110
+			case "stavkaNDS120":
+				resVal = STAVKANDS120
+			default:
+				resVal = STAVKANDSNONE
+			}
+		} else {
+			resVal = ""
+		}
+	}
+	if strings.Contains(FieldsNames[name], "analyse") {
+		//делаем анализ поля
+		switch OFD {
+		case "firstofd":
+			if name == "bindposfieldkassa" || name == "bindposfieldcheck" {
+				reg, fn, fd, descrErr, err := getRegFnFdFromName(resVal)
+				if err != nil {
+					logsmap[LOGERROR].Println(descrErr)
+					erroFatal := fmt.Sprintf("ошбка: %v. Не удалось получить регистрационный номер, номер ФД, ФН из имени кассы %v", err, resVal)
+					log.Fatal(erroFatal)
+				}
+				if name == "bindposfieldkassa" {
+					resVal = reg
+					if FieldsNames[COLBINDHEADFIELDKASSA] == "fnkkt" {
+						resVal = fn
+					}
+				} else if name == "bindposfieldcheck" {
+					resVal = fd
+				}
+			}
+		}
+	}
+	return resVal
+}
+
+func fetchcheck(hyperlinkonjson string) (TReceipt, string, error) {
+	var receipt TReceipt
+	//"https://ofd.ru/Document/ReceiptJsonDownload?DocId=289f8926-74f2-b25b-f34a-6edf933b9999"
+	resp, err := http.Get(hyperlinkonjson)
+	if err != nil {
+		errDescr := fmt.Sprintf("ошибка(не удалось получить ответ от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
+		logsmap[LOGERROR].Println(errDescr)
+		return receipt, errDescr, err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		errDescr := fmt.Sprintf("ошибка(прочитать данные от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
+		logsmap[LOGERROR].Println(errDescr)
+		return receipt, errDescr, err
+	}
+
+	//fmt.Println(string(body))
+	err = json.Unmarshal(body, &receipt)
+	if err != nil {
+		errDescr := fmt.Sprintf("ошибка(парсинг данных от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
+		logsmap[LOGERROR].Println(errDescr)
+		return receipt, errDescr, err
+	}
+	//for _, item := range receipt.Document.Items {
+	//	fmt.Println(item.Name)
+	//	fmt.Println(item.Price)
+	//	fmt.Println(item.Quantity)
+	//	fmt.Println(item.ProductCode.Code_GS_1M)
+	//}
+	return receipt, "", nil
+}
+
+func notEmptyFloatField(val string) bool {
+	res := true
+	if val == "" || val == "0.00" || val == "0.00 ₽" || val == "0,00 ₽" || val == "0,00" ||
+		val == "0,00 р" {
+		res = false
+	}
+	return res
+}
+
+func isInvField(fieldname string) bool {
+	res := false
+	if strings.Contains(fieldname, "inv") {
+		res = true
+	}
+	return res
+}
+
+func getSposobRash(sposob string) string {
+	res := "fullPayment"
+	return res
+}
+
+func getPredmRasch(predm string) string {
+	res := "commodity"
+	switch predm {
+	case "ТМ":
+		res = "commodityWithMarking"
+	case "ПОДАКЦИЗНЫЙ ТОВАР":
+		res = "excise"
+	case "ТНМ":
+		res = "commodityWithoutMarking"
+	case "АТМ":
+		res = "exciseWithMarking"
+	}
+	return res
+}
+
+func getFloatFromStr(val string) (float64, string, error) {
+	var err error
+	res := 0.0
+	if val != "" {
+		res, err = strconv.ParseFloat(val, 64)
+		if err != nil {
+			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для суммы оплаты", err, val)
+			logsmap[LOGERROR].Println(descrErr)
+			return res, descrErr, err
+		}
+	}
+	return res, "", nil
+	//nalch, err := strconv.ParseFloat(nal, 64)
+}
+
+func replacefieldbyjsonhrep(hyperlhtml string) string {
+	//https://ofd.ru/Document/RenderDoc?RawId=a1c0fddc-917c-0b93-6b30-25eb0ee91259
+	//to
+	//https://ofd.ru/Document/ReceiptJsonDownload?DocId=a1c0fddc-917c-0b93-6b30-25eb0ee91259
+	return strings.ReplaceAll(hyperlhtml, "RenderDoc?RawId=", "ReceiptJsonDownload?DocId=")
+}
+
+func getRecitpFromDisk(fd, fp string) (TReceipt, string, error) {
+	var resReceipt TReceipt
+	nameoffile := fp + "_" + fp + ".csv"
+	f, err := os.Open(DIROFREQUEST + nameoffile)
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (%v) входных данных (шапки чека)", err, nameoffile)
+		logsmap[LOGERROR].Println(descrError)
+		return resReceipt, descrError, err
+	}
+	defer f.Close()
+	csv_red := csv.NewReader(f)
+	csv_red.FieldsPerRecord = -1
+	csv_red.LazyQuotes = true
+	csv_red.Comma = ';'
+	logsmap[LOGINFO].Println("чтение json response из файла")
+	lines, err := csv_red.ReadAll()
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (%v) входных данных (шапки чека)", err, nameoffile)
+		logsmap[LOGERROR].Println(descrError)
+		return resReceipt, descrError, err
+	}
+	//перебор всех строчек файла с шапкоми чеков
+	countAllPos := len(lines) - 1
+	logsmap[LOGINFO].Printf("перебор %v позиций", countAllPos)
+	currLine := 0
+	for _, line := range lines {
+		currLine++
+		if currLine == 1 {
+			continue //пропускаем нстроку названий столбцов
+		}
+		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllPos)
+		logsmap[LOGINFO].Println(descrInfo)
+		logsmap[LOGINFO].Println(line)
+		resReceipt.Document.Items = append(resReceipt.Document.Items, TItem{})
+		resReceipt.Document.Items[len(resReceipt.Document.Items)-1].Name = line[0]
+		//resReceipt.Document.Items[len(resReceipt.Document.Items)-1].Quantity = line[1]
+		//resReceipt.Document.Items[len(resReceipt.Document.Items)-1].Price = line[2]
+		//resReceipt.Document.Items[len(resReceipt.Document.Items)-1].Amount = line[3]
+		resReceipt.Document.Items[len(resReceipt.Document.Items)-1].ProductCode.Code_GS_1M = line[4]
+	}
+	return resReceipt, "", nil
+}
+
+func alredyGettedFetch(fd, fp string) bool {
+	res := true
+	nameoffile := fp + "_" + fp + ".csv"
+	fullname := DIROFREQUEST + nameoffile
+	if foundedRespFile, _ := doesFileExist(fullname); !foundedRespFile {
+		res = false
+	}
+	return res
+}
+
+func saveReceiptToDisk(fd, fp string, receipt TReceipt) {
+	nameoffile := fp + "_" + fp + ".csv"
+	freceipt, err := os.Create(DIROFREQUEST + nameoffile)
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (%v) входных данных (шапки чека)", err, nameoffile)
+		logsmap[LOGERROR].Println(descrError)
+		log.Fatal(descrError)
+	}
+	defer freceipt.Close()
+	csv_receipt := csv.NewWriter(freceipt)
+	csv_receipt.Comma = ';'
+	defer csv_receipt.Flush()
+	csv_receipt.Write([]string{"NAME", "QUANTITY", "PRICE", "AMOUNT", "MARK"})
+	for _, pos := range receipt.Document.Items {
+		q := strconv.FormatFloat(pos.Quantity, 'f', -1, 64)
+		pr := strconv.FormatFloat(pos.Price, 'f', -1, 64)
+		am := strconv.FormatFloat(pos.Total, 'f', -1, 64)
+		csv_receipt.Write([]string{pos.Name, q, pr, am, pos.ProductCode.Code_GS_1M})
+	}
 }
