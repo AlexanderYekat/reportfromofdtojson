@@ -23,6 +23,7 @@ const NAME_OF_PROGRAM = "формирование json заданий чеков
 
 const EMAILFIELD = "email"
 const NOPRINTFIELD = "electronically"
+const NAMETYPEOFMARK = "TYPEMARK"
 
 const COLREGNUMKKT = "regnumkkt"
 const COLFNKKT = "fnkkt"
@@ -99,9 +100,23 @@ type TClientInfo struct {
 type TTaxNDS struct {
 	Type string `json:"type,omitempty"`
 }
-type TProductCodes struct {
-	Undefined string `json:"undefined,omitempty"` //32 символа только
-	Tag1305   string `json:"gs1m,omitempty"`
+type TProductCodesAtol struct {
+	Undefined    string `json:"undefined,omitempty"` //32 символа только
+	Code_EAN_8   string `json:"ean8,omitempty"`
+	Code_EAN_13  string `json:"ean13,omitempty"`
+	Code_ITF_14  string `json:"itf14,omitempty"`
+	Code_GS_1    string `json:"gs10,omitempty"`
+	Tag1305      string `json:"gs1m,omitempty"`
+	Code_KMK     string `json:"short,omitempty"`
+	Code_MI      string `json:"furs,omitempty"`
+	Code_EGAIS_2 string `json:"egais20,omitempty"`
+	Code_EGAIS_3 string `json:"egais30,omitempty"`
+	Code_F_1     string `json:"f1,omitempty"`
+	Code_F_2     string `json:"f2,omitempty"`
+	Code_F_3     string `json:"f3,omitempty"`
+	Code_F_4     string `json:"f4,omitempty"`
+	Code_F_5     string `json:"f5,omitempty"`
+	Code_F_6     string `json:"f6,omitempty"`
 }
 
 type TPayment struct {
@@ -120,10 +135,10 @@ type TPosition struct {
 	PaymentObject   string   `json:"paymentObject,omitempty"`
 	Tax             *TTaxNDS `json:"tax,omitempty"`
 	//fot type tag1192 //AdditionalAttribute
-	Value        string         `json:"value,omitempty"`
-	Print        bool           `json:"print,omitempty"`
-	ProductCodes *TProductCodes `json:"productCodes,omitempty"`
-	ImcParams    *TImcParams    `json:"imcParams,omitempty"`
+	Value        string             `json:"value,omitempty"`
+	Print        bool               `json:"print,omitempty"`
+	ProductCodes *TProductCodesAtol `json:"productCodes,omitempty"`
+	ImcParams    *TImcParams        `json:"imcParams,omitempty"`
 }
 
 type TOperator struct {
@@ -172,13 +187,13 @@ type TItem struct {
 	Total                     float64
 	CalculationMethod         int
 	SubjectType               int
-	ProductCode               TProductCode
+	ProductCode               TProductCodeOFD
 	NDS_PieceSumm             float64
 	NDS_Rate                  int
 	NDS_Summ                  float64
 	ProductUnitOfMeasure      int
 }
-type TProductCode struct {
+type TProductCodeOFD struct {
 	Code_Undefined string
 	Code_EAN_8     string
 	Code_EAN_13    string
@@ -221,7 +236,7 @@ var clearLogsProgramm = flag.Bool("clearlogs", true, "очистить логи 
 var ofdtemplate = flag.String("ofdtemplate", "ofd.ru", "шаблон ОФД: ofd.ru, 1-ofd.ru, kontur.ru")
 var email = flag.String("email", "", "email, на которое будут отсылаться все чеки")
 var noprint = flag.Bool("noprint", false, "печатать на бумагу (false) или не печатать (true) чек коорекции")
-var GradeDetailedMark = flag.Int("gradesimplymark", 1, "уровень простоты вставки марки в чек коррекции. 0-не вставлять, 1 - в тег 1300, 2 - в тег 1305, 3 - вставка полной структура марки со всеми сопутсвующими тегами, 4 - всатвка со всеми полями единиц")
+var GradeDetailedMark = flag.Int("gradesimplymark", 4, "уровень простоты вставки марки в чек коррекции. 0-не вставлять, 1 - в тег 1300, 2 - в тег 1305, 3 - вставка полной структура марки со всеми сопутсвующими тегами, 4 - всатвка со всеми полями единиц")
 
 var FieldsNums map[string]int
 var FieldsNames map[string]string
@@ -405,81 +420,152 @@ func main() {
 			neededGetMarks := false
 			for _, pos := range findedPositions {
 				if (pos[COLPREDMET] == "ТМ") || (pos[COLPREDMET] == "АТМ") {
+					logsmap[LOGINFO].Printf("для позицции %v требуется получить марку", pos)
 					neededGetMarks = true
 					break
 				}
 			}
+			logsmap[LOGINFO].Printf("neededGetMarks = %v", neededGetMarks)
 			if neededGetMarks {
-				fmt.Println(checkDescrInfo, "полчаем json для марки")
+				logsmap[LOGINFO].Println("будем получать/читать json с марками")
+				//fmt.Println(checkDescrInfo, "полчаем json для марки")
 				var receipt TReceipt
 				var descrErr string
 				var err error
-				receiptGetted := false
-				if alredyGettedFetch(HeadOfCheck[COLFD], HeadOfCheck[COLFP]) {
-					fmt.Println("уже был запрос")
-					logsmap[LOGINFO].Println("полученный файл уже обработан")
-					receipt, descrErr, err = getRecitpFromDisk(HeadOfCheck[COLFD], HeadOfCheck[COLFP])
-					if err == nil {
-						receiptGetted = true
-						fmt.Println("прочитали сохранённый запрос")
-					} else {
-						fmt.Println("не удалось прочиать сохранённый запрос")
-						logsmap[LOGERROR].Println(descrErr)
-					}
+				//receiptGetted := false
+				//if alredyGettedFetch(HeadOfCheck[COLFD], HeadOfCheck[COLFP]) {
+				//	//fmt.Println("уже был запрос")
+				//	logsmap[LOGINFO].Println("полученный файл уже обработан")
+				//	receipt, descrErr, err = getRecitpFromDisk(HeadOfCheck[COLFD], HeadOfCheck[COLFP])
+				//	if err == nil {
+				//		receiptGetted = true
+				//		//fmt.Println("прочитали сохранённый запрос")
+				//	} else {
+				//		//fmt.Println("не удалось прочиать сохранённый запрос")
+				//		logsmap[LOGERROR].Println(descrErr)
+				//	}
+				//}
+				//if !receiptGetted {
+				//fmt.Println("отрпавим сейчас запрос на сервер ОФД")
+				logsmap[LOGINFO].Println("анализируем поле", FieldsNames[COLLINK])
+				hypperlinkjson := replacefieldbyjsonhrep(HeadOfCheck[COLLINK])
+				//fmt.Println("hypperlinkjson", hypperlinkjson)
+				receipt, descrErr, err = fetchcheck(HeadOfCheck[COLFD], HeadOfCheck[COLFP], hypperlinkjson)
+				if err != nil {
+					logsmap[LOGERROR].Println(descrErr)
+					analyzeComlite = false
+					break
 				}
-				if !receiptGetted {
-					fmt.Println("отрпавим сейчас запрос на сервер ОФД")
-					logsmap[LOGINFO].Println("анализируем поле", FieldsNames[COLLINK])
-					logsmap[LOGINFO].Println("анализируем значение", HeadOfCheck[COLLINK])
-					hypperlinkjson := replacefieldbyjsonhrep(HeadOfCheck[COLLINK])
-					fmt.Println("hypperlinkjson", hypperlinkjson)
-					receipt, descrErr, err = fetchcheck(hypperlinkjson)
-					if err != nil {
-						logsmap[LOGERROR].Println(descrErr)
-						analyzeComlite = false
-						break
-					}
-					saveReceiptToDisk(HeadOfCheck[COLFD], HeadOfCheck[COLFP], receipt)
-					fmt.Println("receipt", receipt)
-					fmt.Println("сохраняем запрос в файл")
-				}
+				//saveReceiptToDisk(HeadOfCheck[COLFD], HeadOfCheck[COLFP], receipt)
+				//fmt.Println("receipt", receipt)
+				//fmt.Println("сохраняем запрос в файл")
+				//}
 				//записваем значение марки
-				fmt.Println("записваем значение марки")
-				fmt.Println("findedPositions", findedPositions)
-				fmt.Println("------------------")
+				//fmt.Println("записваем значение марки")
+				//fmt.Println("findedPositions", findedPositions)
+				//fmt.Println("------------------")
 				for _, itemPos := range receipt.Document.Items {
-					fmt.Printf("itemPos =%v.\n", itemPos.Name)
-					fmt.Printf("Code_GS_1M=%v.\n", itemPos.ProductCode.Code_GS_1M)
-					if itemPos.ProductCode.Code_GS_1M == "" {
+					//fmt.Printf("itemPos =%v.\n", itemPos.Name)
+					//fmt.Printf("Code_GS_1M=%v.\n", itemPos.ProductCode.Code_GS_1M)
+					markOfField := ""
+					nameTypeOfMark := ""
+					if itemPos.ProductCode.Code_Undefined != "" {
+						nameTypeOfMark = "Undefined"
+						markOfField = itemPos.ProductCode.Code_Undefined
+					}
+					if itemPos.ProductCode.Code_EAN_8 != "" {
+						nameTypeOfMark = "EAN_8"
+						markOfField = itemPos.ProductCode.Code_EAN_8
+					}
+					if itemPos.ProductCode.Code_EAN_13 != "" {
+						nameTypeOfMark = "EAN_13"
+						markOfField = itemPos.ProductCode.Code_EAN_13
+					}
+					if itemPos.ProductCode.Code_ITF_14 != "" {
+						nameTypeOfMark = "ITF_14"
+						markOfField = itemPos.ProductCode.Code_ITF_14
+					}
+					if itemPos.ProductCode.Code_GS_1 != "" {
+						nameTypeOfMark = "GS_1"
+						markOfField = itemPos.ProductCode.Code_GS_1
+					}
+					if itemPos.ProductCode.Code_GS_1M != "" {
+						nameTypeOfMark = "GS_1M"
+						markOfField = itemPos.ProductCode.Code_GS_1M
+					}
+					if itemPos.ProductCode.Code_KMK != "" {
+						nameTypeOfMark = "KMK"
+						markOfField = itemPos.ProductCode.Code_KMK
+					}
+					if itemPos.ProductCode.Code_MI != "" {
+						nameTypeOfMark = "MI"
+						markOfField = itemPos.ProductCode.Code_MI
+					}
+					if itemPos.ProductCode.Code_EGAIS_2 != "" {
+						nameTypeOfMark = "EGAIS_2"
+						markOfField = itemPos.ProductCode.Code_EGAIS_2
+					}
+					if itemPos.ProductCode.Code_EGAIS_3 != "" {
+						nameTypeOfMark = "EGAIS_3"
+						markOfField = itemPos.ProductCode.Code_EGAIS_3
+					}
+					if itemPos.ProductCode.Code_F_1 != "" {
+						nameTypeOfMark = "F_1"
+						markOfField = itemPos.ProductCode.Code_F_1
+					}
+					if itemPos.ProductCode.Code_F_2 != "" {
+						nameTypeOfMark = "F_2"
+						markOfField = itemPos.ProductCode.Code_F_2
+					}
+					if itemPos.ProductCode.Code_F_3 != "" {
+						nameTypeOfMark = "F_3"
+						markOfField = itemPos.ProductCode.Code_F_3
+					}
+					if itemPos.ProductCode.Code_F_4 != "" {
+						nameTypeOfMark = "F_4"
+						markOfField = itemPos.ProductCode.Code_F_4
+					}
+					if itemPos.ProductCode.Code_F_5 != "" {
+						nameTypeOfMark = "F_5"
+						markOfField = itemPos.ProductCode.Code_F_5
+					}
+					if itemPos.ProductCode.Code_F_6 != "" {
+						nameTypeOfMark = "F_6"
+						markOfField = itemPos.ProductCode.Code_F_6
+					}
+					if markOfField == "" {
 						continue
 					}
 					for _, posFined := range findedPositions {
-						fmt.Printf("posFined=%v.\n", posFined[COLNAME])
+						//fmt.Printf("posFined=%v.\n", posFined[COLNAME])
 						if strings.EqualFold(strings.ToLower(itemPos.Name), strings.ToLower(posFined[COLNAME])) {
-							fmt.Println("нашли позицию", itemPos.Name)
-							posFined[COLMARK] = itemPos.ProductCode.Code_GS_1M
+							//fmt.Println("нашли позицию", itemPos.Name)
+							//logsmap[LOG]
+							//posFined[COLMARK] = itemPos.ProductCode.Code_GS_1M
+							posFined[COLMARK] = markOfField
+							posFined[NAMETYPEOFMARK] = nameTypeOfMark
 							break
 						}
 					}
 					analyzeComlite = true
 				}
-				fmt.Println("------------------")
-				fmt.Println("findedPositions", findedPositions)
-				fmt.Println("------------------****************")
+				//fmt.Println("------------------")
+				//fmt.Println("findedPositions", findedPositions)
+				//fmt.Println("------------------****************")
 			}
 		}
 		if (countOfPositions > 0) && analyzeComlite { //если для чека были найдены позиции
 			logsmap[LOGINFO].Println("генерируем json файл")
 			//jsonres, descError, err := generateCheckCorrection(headOfCheckkassir, innkassir, dateCh, fd, fp, typeCheck, *email, nal, bez, avance, kred, obmen, findedPositions)
 			jsonres, descError, err := generateCheckCorrection(HeadOfCheck, findedPositions)
-			for k, v := range jsonres.Items {
-				fmt.Println("name", v.Name)
-				fmt.Println("k", k)
-				fmt.Println("v", v)
-				fmt.Println(v.ImcParams)
-				//fmt.Println(v.ImcParams.Imc)
-			}
-			fmt.Println("jsonres", jsonres)
+			//for k, v := range jsonres.Items {
+			//fmt.Println("name", v.Name)
+			//fmt.Println("k", k)
+			//fmt.Println("v", v)
+			//fmt.Println(v.ImcParams)
+			//fmt.Println(v.ImcParams.Imc)
+			//}
+			//fmt.Println("jsonres", jsonres)
 			if err != nil {
 				descrError := fmt.Sprintf("ошибка (%v) полчуение json чека коррекции (%v)", descError, checkDescrInfo)
 				logsmap[LOGERROR].Println(descrError)
@@ -521,7 +607,7 @@ func main() {
 			}
 			f.Close()
 			countWritedChecks++
-			panic("ok2")
+			//panic("ok2")
 		} else {
 			if analyzeComlite {
 				descrError := fmt.Sprintf("для чека %v не найдены позиции", checkDescrInfo)
@@ -791,11 +877,12 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			currMark := pos[COLMARK]
 			if *GradeDetailedMark == 1 {
 				byte32onlyCut := min(32, len(currMark))
-				newPos.ProductCodes = new(TProductCodes)
+				newPos.ProductCodes = new(TProductCodesAtol)
 				newPos.ProductCodes.Undefined = currMark[:byte32onlyCut]
-			} else if *GradeDetailedMark == 2 {
-				newPos.ProductCodes = new(TProductCodes)
-				newPos.ProductCodes.Tag1305 = currMark
+			} else if *GradeDetailedMark == 2 || (pos[NAMETYPEOFMARK] == "Undefined") || (pos[NAMETYPEOFMARK] == "EAN_8") ||
+				(pos[NAMETYPEOFMARK] == "EAN_13") || (pos[NAMETYPEOFMARK] == "ITF_14") {
+				newPos.ProductCodes = new(TProductCodesAtol)
+				setMarkInArolDriverCorrenspOFDMark(newPos.ProductCodes, currMark, pos[NAMETYPEOFMARK])
 			} else if *GradeDetailedMark == 3 || *GradeDetailedMark == 4 {
 				currMarkInBase64 := base64.StdEncoding.EncodeToString([]byte(currMark))
 				newPos.ImcParams = new(TImcParams)
@@ -1083,24 +1170,39 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 	return resVal
 }
 
-func fetchcheck(hyperlinkonjson string) (TReceipt, string, error) {
+func fetchcheck(fd, fp, hyperlinkonjson string) (TReceipt, string, error) {
 	var receipt TReceipt
+	var resp *http.Response
+	var err error
+	var body []byte
+	nameoffile := fd + "_" + fp + ".resp"
+	fullFileName := DIROFREQUEST + nameoffile
+	if !alredyGettedFetch(fd, fp) {
+		logsmap[LOGINFO].Printf("получение данных о чеке по ссылке %v", hyperlinkonjson)
+		resp, err = http.Get(hyperlinkonjson)
+		if err != nil {
+			errDescr := fmt.Sprintf("ошибка(не удалось получить ответ от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
+			logsmap[LOGERROR].Println(errDescr)
+			return receipt, errDescr, err
+		}
+		defer resp.Body.Close()
+		body, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			errDescr := fmt.Sprintf("ошибка(прочитать данные от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
+			logsmap[LOGERROR].Println(errDescr)
+			return receipt, errDescr, err
+		}
+		ioutil.WriteFile(fullFileName, body, 0644)
+	} else {
+		logsmap[LOGINFO].Printf("получение данных из файла %v ", fullFileName)
+		body, err = ioutil.ReadFile(fullFileName)
+		if err != nil {
+			errDescr := fmt.Sprintf("ошибка(чтения данные с диска): %v. Не удалось получить данные с диска файла %v", err, fullFileName)
+			logsmap[LOGERROR].Println(errDescr)
+			return receipt, errDescr, err
+		}
+	}
 	//"https://ofd.ru/Document/ReceiptJsonDownload?DocId=289f8926-74f2-b25b-f34a-6edf933b9999"
-	resp, err := http.Get(hyperlinkonjson)
-	if err != nil {
-		errDescr := fmt.Sprintf("ошибка(не удалось получить ответ от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
-		logsmap[LOGERROR].Println(errDescr)
-		return receipt, errDescr, err
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		errDescr := fmt.Sprintf("ошибка(прочитать данные от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
-		logsmap[LOGERROR].Println(errDescr)
-		return receipt, errDescr, err
-	}
-
-	//fmt.Println(string(body))
 	err = json.Unmarshal(body, &receipt)
 	if err != nil {
 		errDescr := fmt.Sprintf("ошибка(парсинг данных от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
@@ -1175,52 +1277,9 @@ func replacefieldbyjsonhrep(hyperlhtml string) string {
 	return strings.ReplaceAll(hyperlhtml, "RenderDoc?RawId=", "ReceiptJsonDownload?DocId=")
 }
 
-func getRecitpFromDisk(fd, fp string) (TReceipt, string, error) {
-	var resReceipt TReceipt
-	nameoffile := fp + "_" + fp + ".csv"
-	f, err := os.Open(DIROFREQUEST + nameoffile)
-	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (%v) входных данных (шапки чека)", err, nameoffile)
-		logsmap[LOGERROR].Println(descrError)
-		return resReceipt, descrError, err
-	}
-	defer f.Close()
-	csv_red := csv.NewReader(f)
-	csv_red.FieldsPerRecord = -1
-	csv_red.LazyQuotes = true
-	csv_red.Comma = ';'
-	logsmap[LOGINFO].Println("чтение json response из файла")
-	lines, err := csv_red.ReadAll()
-	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (%v) входных данных (шапки чека)", err, nameoffile)
-		logsmap[LOGERROR].Println(descrError)
-		return resReceipt, descrError, err
-	}
-	//перебор всех строчек файла с шапкоми чеков
-	countAllPos := len(lines) - 1
-	logsmap[LOGINFO].Printf("перебор %v позиций", countAllPos)
-	currLine := 0
-	for _, line := range lines {
-		currLine++
-		if currLine == 1 {
-			continue //пропускаем нстроку названий столбцов
-		}
-		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllPos)
-		logsmap[LOGINFO].Println(descrInfo)
-		logsmap[LOGINFO].Println(line)
-		resReceipt.Document.Items = append(resReceipt.Document.Items, TItem{})
-		resReceipt.Document.Items[len(resReceipt.Document.Items)-1].Name = line[0]
-		//resReceipt.Document.Items[len(resReceipt.Document.Items)-1].Quantity = line[1]
-		//resReceipt.Document.Items[len(resReceipt.Document.Items)-1].Price = line[2]
-		//resReceipt.Document.Items[len(resReceipt.Document.Items)-1].Amount = line[3]
-		resReceipt.Document.Items[len(resReceipt.Document.Items)-1].ProductCode.Code_GS_1M = line[4]
-	}
-	return resReceipt, "", nil
-}
-
 func alredyGettedFetch(fd, fp string) bool {
 	res := true
-	nameoffile := fp + "_" + fp + ".csv"
+	nameoffile := fd + "_" + fp + ".resp"
 	fullname := DIROFREQUEST + nameoffile
 	if foundedRespFile, _ := doesFileExist(fullname); !foundedRespFile {
 		res = false
@@ -1228,23 +1287,41 @@ func alredyGettedFetch(fd, fp string) bool {
 	return res
 }
 
-func saveReceiptToDisk(fd, fp string, receipt TReceipt) {
-	nameoffile := fp + "_" + fp + ".csv"
-	freceipt, err := os.Create(DIROFREQUEST + nameoffile)
-	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (%v) входных данных (шапки чека)", err, nameoffile)
-		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
-	}
-	defer freceipt.Close()
-	csv_receipt := csv.NewWriter(freceipt)
-	csv_receipt.Comma = ';'
-	defer csv_receipt.Flush()
-	csv_receipt.Write([]string{"NAME", "QUANTITY", "PRICE", "AMOUNT", "MARK"})
-	for _, pos := range receipt.Document.Items {
-		q := strconv.FormatFloat(pos.Quantity, 'f', -1, 64)
-		pr := strconv.FormatFloat(pos.Price, 'f', -1, 64)
-		am := strconv.FormatFloat(pos.Total, 'f', -1, 64)
-		csv_receipt.Write([]string{pos.Name, q, pr, am, pos.ProductCode.Code_GS_1M})
+func setMarkInArolDriverCorrenspOFDMark(prcode *TProductCodesAtol, mark, typeCode string) {
+	switch typeCode {
+	case "Undefined":
+		prcode.Undefined = mark
+	case "EAN_8":
+		prcode.Code_EAN_8 = mark
+	case "EAN_13":
+		prcode.Code_EAN_13 = mark
+	case "ITF_14":
+		prcode.Code_ITF_14 = mark
+	case "GS_1":
+		prcode.Code_GS_1 = mark
+	case "GS_1M":
+		prcode.Tag1305 = mark
+	case "KMK":
+		prcode.Code_KMK = mark
+	case "MI":
+		prcode.Code_MI = mark
+	case "EGAIS_2":
+		prcode.Code_EGAIS_2 = mark
+	case "EGAIS_3":
+		prcode.Code_EGAIS_3 = mark
+	case "F_1":
+		prcode.Code_F_1 = mark
+	case "F_2":
+		prcode.Code_F_2 = mark
+	case "F_3":
+		prcode.Code_F_3 = mark
+	case "F_4":
+		prcode.Code_F_4 = mark
+	case "F_5":
+		prcode.Code_F_5 = mark
+	case "F_6":
+		prcode.Code_F_6 = mark
+	default:
+		prcode.Tag1305 = mark
 	}
 }
