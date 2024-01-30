@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
@@ -18,7 +19,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_01_17_06"
+const VERSION_OF_PROGRAM = "2024_01_30_04"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -155,6 +156,7 @@ type TCorrectionCheck struct {
 	//sellReturnCorrection - чек коррекции возврата прихода (ФФД ≥ 1.1)
 	//buyReturnCorrection - чек коррекции возврата расхода
 	Electronically       bool        `json:"electronically"`
+	TaxationType         string      `json:"taxationType,omitempty"`
 	ClientInfo           TClientInfo `json:"clientInfo"`
 	CorrectionType       string      `json:"correctionType"` //
 	CorrectionBaseDate   string      `json:"correctionBaseDate"`
@@ -233,10 +235,10 @@ type TImcParams struct {
 
 var clearLogsProgramm = flag.Bool("clearlogs", true, "очистить логи программы")
 
-var ofdtemplate = flag.String("ofdtemplate", "ofd.ru", "шаблон ОФД: ofd.ru, 1-ofd.ru, kontur.ru")
+var ofdchoice = flag.Int("ofd", 0, "Порядковый номер ОФД в файле настроек init.toml раздел [template.ofd]")
 var email = flag.String("email", "", "email, на которое будут отсылаться все чеки")
-var noprint = flag.Bool("noprint", false, "печатать на бумагу (false) или не печатать (true) чек коорекции")
-var GradeDetailedMark = flag.Int("gradesimplymark", 4, "уровень простоты вставки марки в чек коррекции. 0-не вставлять, 1 - в тег 1300, 2 - в тег 1305, 3 - вставка полной структура марки со всеми сопутсвующими тегами, 4 - всатвка со всеми полями единиц")
+var printonpaper = flag.Bool("print", true, "печатать на бумагу (true) или не печатать (false) чек коорекции")
+var debug = flag.Bool("debug", false, "режим отладки")
 
 var FieldsNums map[string]int
 var FieldsNames map[string]string
@@ -248,6 +250,8 @@ var AllFieldPositionsOfCheck []string
 func main() {
 	var data map[string]interface{}
 	var ofdmap interface{}
+	var ofdsinit map[string]string
+	var ofdarray map[int]string
 	runDescription := fmt.Sprintf("программа %v версии %v", NAME_OF_PROGRAM, VERSION_OF_PROGRAM)
 	fmt.Println(runDescription, "запущена")
 	defer fmt.Println(runDescription, "звершена")
@@ -266,25 +270,91 @@ func main() {
 	if err != nil {
 		log.Panic(descrError)
 	}
-	logsmap[LOGINFO].Println(runDescription)
-	//инициализация колонок файлов
-	logsmap[LOGINFO].Println("инициализация номеров колонок")
+	logginInFile(runDescription)
+	fmt.Println("debug: ", *debug)
+	//определение параметров запуска
 	//читаем файл настроек
 	if _, err := toml.DecodeFile("init.toml", &data); err != nil {
 		fmt.Println(err)
 		panic(err)
 	}
+	//читаем все доступные ОФД
+	ofdsinit = make(map[string]string)
+	ofdarray = make(map[int]string)
 	ofdmap = data["template"].(map[string]interface{})["ofd"]
-	for k, v := range ofdmap.(map[string]interface{}) {
-		if *ofdtemplate == fmt.Sprint(v) || *ofdtemplate == k {
-			OFD = k
-			break
+	//for k, v := range ofdmap.(map[string]interface{}) {
+	for _, v := range ofdmap.([]map[string]interface{}) {
+		ofdsinit[v["name"].(string)] = v["descr"].(string)
+		strii := int(v["num"].(int64))
+		ofdarray[strii] = v["name"].(string)
+	}
+	if *ofdchoice == 0 {
+		sQuestOFD := "Выберите ОФД. "
+		for currNumOfd, v := range ofdarray {
+			if sQuestOFD != "Выберите ОФД. " {
+				sQuestOFD = sQuestOFD + ", "
+			}
+			sQuestOFD = sQuestOFD + strconv.Itoa(currNumOfd) + ". " + ofdsinit[v]
 		}
+		sQuestOFD = sQuestOFD + ": "
+		fmt.Print(sQuestOFD)
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
+		*ofdchoice, _ = strconv.Atoi(input.Text())
 	}
+	if *ofdchoice <= 0 {
+		descrError = fmt.Sprintf("неверное значение флага -ofd %v", *ofdchoice)
+		logsmap[LOGERROR].Println(descrError)
+		input := bufio.NewScanner(os.Stdin)
+		println("Нажмите любую клавишу...")
+		input.Scan()
+		log.Panic(descrError)
+	}
+	OFD = ofdarray[*ofdchoice]
 	if OFD == "" {
-		log.Fatal("не найден шаблон ОФД")
+		descrError = fmt.Sprintf("не найден %v шаблон ОФД", *ofdchoice)
+		logsmap[LOGERROR].Println(descrError)
+		input := bufio.NewScanner(os.Stdin)
+		println("Нажмите любую клавишу...")
+		input.Scan()
+		log.Panic(descrError)
 	}
-	fmt.Println("шаблон ОФД", OFD)
+	fmt.Println(ofdsinit[OFD])
+	if *email == "" {
+		fmt.Print("Введите email, на которое будут отсылаться все чеки: ")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
+		*email = input.Text()
+	}
+	if (*email != "") && (*printonpaper) {
+		fmt.Println("printonpaper", *printonpaper)
+		fmt.Print("Печать чеки на бумаге (да/нет, по умолчание да) :")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
+		*printonpaper, _ = getBoolFromString(input.Text(), *printonpaper)
+	}
+	if *email == "" {
+		*printonpaper = true
+	}
+	fmt.Println("**********************")
+	fmt.Println("ОФД: ", ofdsinit[OFD])
+	fmt.Println("email: ", *email)
+	fmt.Println("печать чеки на бумаге: ", *printonpaper)
+	fmt.Print("Настройки верны? Продолжить? (да/нет, по умолчанию: да): ")
+	input := bufio.NewScanner(os.Stdin)
+	input.Scan()
+	contin := true
+	contin, _ = getBoolFromString(input.Text(), contin)
+	if !contin {
+		descrError = "Настройки не верны. Завершение работы программы"
+		logginInFile(descrError)
+		fmt.Println(descrError)
+		println("Нажмите любую клавишу...")
+		input.Scan()
+		log.Panic(descrError)
+	}
+	//инициализация колонок файлов
+	logginInFile("инициализация номеров колонок")
 	FieldsNums = make(map[string]int)
 	FieldsNames = make(map[string]string)
 	for k, v := range data[OFD].(map[string]interface{}) {
@@ -305,7 +375,7 @@ func main() {
 	}
 	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий начато")
 	//инициализация входных данных
-	logsmap[LOGINFO].Println("открытие файла списка чеков")
+	logginInFile("открытие файла списка чеков")
 	f, err := os.Open(DIRINFILES + "checks_header.csv")
 	if err != nil {
 		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header.csv) входных данных (шапки чека)", err)
@@ -317,7 +387,7 @@ func main() {
 	csv_red.FieldsPerRecord = -1
 	csv_red.LazyQuotes = true
 	csv_red.Comma = ';'
-	logsmap[LOGINFO].Println("чтение списка чеков")
+	logginInFile("чтение списка чеков")
 	lines, err := csv_red.ReadAll()
 	if err != nil {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header.csv) входных данных (шапки чека)", err)
@@ -344,13 +414,17 @@ func main() {
 			continue //пропускаем настройку названий столбцов
 		}
 		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
-		logsmap[LOGINFO].Println(descrInfo)
-		logsmap[LOGINFO].Println(line)
+		logginInFile(descrInfo)
+		strlog := fmt.Sprintln(line)
+		logginInFile(strlog)
 		//заполняема поля шапки
 		HeadOfCheck := make(map[string]string)
 		for _, field := range AllFieldsHeadOfCheck {
+			//FieldsNames[COLTYPECHECK]
 			if !isInvField(FieldsNames[field]) {
 				HeadOfCheck[field] = getfieldval(line, FieldsNums, field)
+				strloggin := fmt.Sprintf("заполнение поля %v значением %v\n", field, HeadOfCheck[field])
+				logginInFile(strloggin)
 			}
 		}
 		//заполняем поля шапки с префиксом inv - те эти поля будут - это значения полей позиций
@@ -363,14 +437,19 @@ func main() {
 			logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не опредлена касса", line)
 			continue
 		}
+		if strings.Contains(HeadOfCheck[COLTYPECHECK], "Отчет об открытии смены") ||
+			strings.Contains(HeadOfCheck[COLTYPECHECK], "Отчет о закрытии смены") {
+			logginInFile("пропускаем строку, так как она является отчетом о закрытии или открытии смены")
+			continue
+		}
 		HeadOfCheck[EMAILFIELD] = *email
-		HeadOfCheck[NOPRINTFIELD] = fmt.Sprint(*noprint)
+		HeadOfCheck[NOPRINTFIELD] = fmt.Sprint(!*printonpaper)
 		valbindkassa := HeadOfCheck[COLBINDHEADFIELDKASSA]
 		valbindcheck := HeadOfCheck[COLBINDHEADDIELDCHECK]
 		//ищем позиции в файле позиций чека, которые бы соответсвовали бы текущеё строке чека //по номеру ФН и названию кассы
 		checkDescrInfo := fmt.Sprintf("(ФД %v (ФП %v) от %v)", HeadOfCheck[COLFD], HeadOfCheck[COLFP], HeadOfCheck[COLDATE])
 		descrInfo = fmt.Sprintf("для чека %v ищем позиции", checkDescrInfo)
-		logsmap[LOGINFO].Println(descrInfo)
+		logginInFile(descrInfo)
 		findedPositions, summsOfPayment := findPositions(valbindkassa, valbindcheck, FieldsNames, FieldsNums)
 		//fmt.Println("------------------------------")
 		//fmt.Println("HeadOfCheck", HeadOfCheck)
@@ -413,21 +492,26 @@ func main() {
 		//fmt.Println("findedPositions", findedPositions)
 		//fmt.Println("------------------------------")
 		//panic("ok")
-		logsmap[LOGINFO].Println(descrInfo)
+		logginInFile(descrInfo)
 		//производим сложный анализ
 		analyzeComlite := true
-		if countOfPositions > 0 { //если для чека были найдены позиции
+		strloggin := fmt.Sprintln("countOfPositions=", countOfPositions, "OFD=", OFD)
+		logginInFile(strloggin)
+		if (countOfPositions > 0) && (OFD == "ofdru") { //если для чека были найдены позиции
+			logginInFile("проверка требований к марке")
 			neededGetMarks := false
 			for _, pos := range findedPositions {
 				if (pos[COLPREDMET] == "ТМ") || (pos[COLPREDMET] == "АТМ") {
-					logsmap[LOGINFO].Printf("для позицции %v требуется получить марку", pos)
+					logginstr := fmt.Sprintf("для позицции %v требуется получить марку", pos)
+					logginInFile(logginstr)
 					neededGetMarks = true
 					break
 				}
 			}
-			logsmap[LOGINFO].Printf("neededGetMarks = %v", neededGetMarks)
+			logginstr := fmt.Sprintf("neededGetMarks = %v", neededGetMarks)
+			logginInFile(logginstr)
 			if neededGetMarks {
-				logsmap[LOGINFO].Println("будем получать/читать json с марками")
+				logginInFile("будем получать/читать json с марками")
 				//fmt.Println(checkDescrInfo, "полчаем json для марки")
 				var receipt TReceipt
 				var descrErr string
@@ -447,7 +531,8 @@ func main() {
 				//}
 				//if !receiptGetted {
 				//fmt.Println("отрпавим сейчас запрос на сервер ОФД")
-				logsmap[LOGINFO].Println("анализируем поле", FieldsNames[COLLINK])
+				strloggin := fmt.Sprintln("анализируем поле", FieldsNames[COLLINK])
+				logginInFile(strloggin)
 				hypperlinkjson := replacefieldbyjsonhrep(HeadOfCheck[COLLINK])
 				//fmt.Println("hypperlinkjson", hypperlinkjson)
 				receipt, descrErr, err = fetchcheck(HeadOfCheck[COLFD], HeadOfCheck[COLFP], hypperlinkjson)
@@ -555,7 +640,7 @@ func main() {
 			}
 		}
 		if (countOfPositions > 0) && analyzeComlite { //если для чека были найдены позиции
-			logsmap[LOGINFO].Println("генерируем json файл")
+			logginInFile("генерируем json файл")
 			//jsonres, descError, err := generateCheckCorrection(headOfCheckkassir, innkassir, dateCh, fd, fp, typeCheck, *email, nal, bez, avance, kred, obmen, findedPositions)
 			jsonres, descError, err := generateCheckCorrection(HeadOfCheck, findedPositions)
 			//for k, v := range jsonres.Items {
@@ -571,7 +656,8 @@ func main() {
 				logsmap[LOGERROR].Println(descrError)
 				continue //пропускаем чек
 			}
-			logsmap[LOGINFO].Println(jsonres)
+			loggstr := fmt.Sprintln(jsonres)
+			logginInFile(loggstr)
 			as_json, err := json.MarshalIndent(jsonres, "", "\t")
 			if err != nil {
 				descrError := fmt.Sprintf("ошибка (%v) преобразвания объекта в json для чека %v", err, checkDescrInfo)
@@ -580,7 +666,7 @@ func main() {
 			}
 			dir_file_name := fmt.Sprintf("%v%v/", JSONRES, HeadOfCheck[COLFNKKT])
 			if foundedLogDir, _ := doesFileExist(dir_file_name); !foundedLogDir {
-				logsmap[LOGINFO].Println("генерируем папку результатов, если раньше она не была сгенерирована")
+				logginInFile("генерируем папку результатов, если раньше она не была сгенерирована")
 				os.Mkdir(dir_file_name, 0777)
 				f, err := os.Create(dir_file_name + "printed.txt")
 				if err == nil {
@@ -621,6 +707,8 @@ func main() {
 	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий завершено")
 	logsmap[LOGINFO_WITHSTD].Printf("обработано %v из %v чеков", countWritedChecks, countAllChecks)
 	logsmap[LOGINFO_WITHSTD].Println("проверка завершена")
+	println("Нажмите любую клавишу...")
+	input.Scan()
 }
 
 func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[string]int) error {
@@ -650,7 +738,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 	summsPayment := make(map[string]float64)
 	f, err := os.Open(DIRINFILES + "checks_poss.csv")
 	if err != nil {
-		log.Fatal("не удлась открыть файл позиций чека", err)
+		log.Panic("не удлась открыть файл позиций чека", err)
 	}
 	defer f.Close()
 	csv_red := csv.NewReader(f)
@@ -659,22 +747,37 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 	csv_red.Comma = ';'
 	lines, err := csv_red.ReadAll()
 	if err != nil {
-		log.Fatal("не удлась прочитать csv файл позиций чека", err)
+		log.Panic("не удлась прочитать csv файл позиций чека", err)
 	}
 	currPos := 0
 	currLine := 0
+	valbindkassainpos := ""
+	valbindcheckpos := ""
 	for _, line := range lines { //перебор всех строк в файле позиций чека
 		currLine++
 		//fmt.Println(line)
 		if currLine == 1 {
 			continue
 		}
-		valbindkassainpos := getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
-		valbindcheckpos := getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
+		if OFD == "sbis" {
+			kassaname := getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
+			docnum := getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
+			if kassaname != "" || docnum != "" {
+				valbindkassainpos = kassaname
+				valbindcheckpos = docnum
+			}
+		} else {
+			valbindkassainpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
+			valbindcheckpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
+		}
 		if (valbindkassainhead != valbindkassainpos) || (valbindcheckinhead != valbindcheckpos) {
 			continue
 		}
-		logsmap[LOGINFO].Println("Найдена строка", line)
+		if !notEmptyFloatField(getfieldval(line, fieldsnums, COLQUANTITY)) {
+			continue //пропускаем строки с пустым или нулевым количесве
+		}
+		logstr := fmt.Sprintln("Найдена строка", line)
+		logginInFile(logstr)
 		currPos++
 		res[currPos] = make(map[string]string)
 		for _, field := range AllFieldsHeadOfCheck {
@@ -745,6 +848,10 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		descError := fmt.Sprintf("ошибка (для типа %v не определён тип чека коррекциии) %v", typeCheck, strInfoAboutCheck)
 		logsmap[LOGERROR].Println(descError)
 		return checkCorr, descError, errors.New("ошибка определения типа чека коррекции")
+	}
+	osnLoc := getOsnFromChernovVal(headofcheck[COLOSN])
+	if osnLoc != "" {
+		checkCorr.TaxationType = osnLoc
 	}
 	//strconv.ParseBool
 	checkCorr.Electronically, _ = strconv.ParseBool(headofcheck[NOPRINTFIELD])
@@ -856,7 +963,7 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			return checkCorr, descrErr, err
 		}
 		newPos.Amount = sch
-		newPos.MeasurementUnit = "piece"
+		newPos.MeasurementUnit = "piece" //liter
 		newPos.PaymentMethod = getSposobRash(pos[COLSPOSOB])
 		//commodityWithMarking
 		newPos.PaymentObject = getPredmRasch(pos[COLPREDMET])
@@ -874,37 +981,32 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			newPos.Tax.Type = STAVKANDS110
 		}
 		if pos[COLMARK] != "" {
+			measunit := "piece"
+			if qch != 1 {
+				measunit = "liter"
+				newPos.MeasurementUnit = measunit
+			}
 			currMark := pos[COLMARK]
-			if *GradeDetailedMark == 1 {
-				byte32onlyCut := min(32, len(currMark))
-				newPos.ProductCodes = new(TProductCodesAtol)
-				newPos.ProductCodes.Undefined = currMark[:byte32onlyCut]
-			} else if *GradeDetailedMark == 2 || (pos[NAMETYPEOFMARK] == "Undefined") || (pos[NAMETYPEOFMARK] == "EAN_8") ||
+			if (pos[NAMETYPEOFMARK] == "Undefined") || (pos[NAMETYPEOFMARK] == "EAN_8") ||
 				(pos[NAMETYPEOFMARK] == "EAN_13") || (pos[NAMETYPEOFMARK] == "ITF_14") {
 				newPos.ProductCodes = new(TProductCodesAtol)
 				setMarkInArolDriverCorrenspOFDMark(newPos.ProductCodes, currMark, pos[NAMETYPEOFMARK])
-			} else if *GradeDetailedMark == 3 || *GradeDetailedMark == 4 {
+			} else {
 				currMarkInBase64 := base64.StdEncoding.EncodeToString([]byte(currMark))
 				newPos.ImcParams = new(TImcParams)
 				newPos.ImcParams.ImcType = "auto"
 				newPos.ImcParams.Imc = currMarkInBase64
-				itemPieceSold := "itemPieceSold"
-				if headofcheck[COLTAG1054] == "sellReturnCorrection" {
-					itemPieceSold = "itemPieceReturn"
-				}
-				newPos.ImcParams.ItemEstimatedStatus = itemPieceSold
-				newPos.ImcParams.ItemUnits = "piece"
+				newPos.ImcParams.ItemEstimatedStatus = "itemStatusUnchanged" //статус товара не изменился
+				newPos.ImcParams.ItemUnits = measunit
 				newPos.ImcParams.ImcModeProcessing = 0
 				//newPos.ImcParams.ImcBarcode
-				if *GradeDetailedMark == 4 {
-					newPos.ImcParams.ItemQuantity = newPos.Quantity
-					newPos.ImcParams.ItemInfoCheckResult = new(TItemInfoCheckResult)
-					newPos.ImcParams.ItemInfoCheckResult.ImcCheckFlag = true
-					newPos.ImcParams.ItemInfoCheckResult.ImcCheckResult = true
-					newPos.ImcParams.ItemInfoCheckResult.ImcStatusInfo = true
-					newPos.ImcParams.ItemInfoCheckResult.ImcEstimatedStatusCorrect = true
-					newPos.ImcParams.ItemInfoCheckResult.EcrStandAloneFlag = false
-				}
+				newPos.ImcParams.ItemQuantity = newPos.Quantity
+				newPos.ImcParams.ItemInfoCheckResult = new(TItemInfoCheckResult)
+				newPos.ImcParams.ItemInfoCheckResult.ImcCheckFlag = true
+				newPos.ImcParams.ItemInfoCheckResult.ImcCheckResult = true
+				newPos.ImcParams.ItemInfoCheckResult.ImcStatusInfo = true
+				newPos.ImcParams.ItemInfoCheckResult.ImcEstimatedStatusCorrect = true
+				newPos.ImcParams.ItemInfoCheckResult.EcrStandAloneFlag = false
 			}
 		}
 		checkCorr.Items = append(checkCorr.Items, newPos)
@@ -924,6 +1026,7 @@ func formatMyDate(dt string) string {
 	//28.11.2023
 	//09.01.2024 15:42
 	//2023-11-09 - офд.ru
+	//10.11.23 19:40 - сбис
 	if OFD == "ofdru" {
 		res := strings.ReplaceAll(dt, "-", ".")
 		return res
@@ -932,7 +1035,12 @@ func formatMyDate(dt string) string {
 	if indOfPoint == 4 {
 		return dt
 	}
-	y := dt[6:10]
+	y := ""
+	if OFD == "sbis" {
+		y = "20" + dt[6:8]
+	} else {
+		y = dt[6:10]
+	}
 	m := dt[3:5]
 	d := dt[0:2]
 	res := y + "." + m + "." + d
@@ -964,7 +1072,7 @@ func InitializationLogsFiles() (string, error) {
 	fmt.Println("лог файлы инициализированы в папке " + LOGSDIR)
 	multwriterLocLoc := io.MultiWriter(logsmap[LOGINFO].Writer(), os.Stdout)
 	logsmap[LOGINFO_WITHSTD] = log.New(multwriterLocLoc, LOG_PREFIX+"_"+strings.ToUpper(LOGINFO)+" ", log.LstdFlags)
-	logsmap[LOGINFO].Println(clearLogsDescr)
+	logginInFile(clearLogsDescr)
 	return "", nil
 }
 
@@ -1178,7 +1286,8 @@ func fetchcheck(fd, fp, hyperlinkonjson string) (TReceipt, string, error) {
 	nameoffile := fd + "_" + fp + ".resp"
 	fullFileName := DIROFREQUEST + nameoffile
 	if !alredyGettedFetch(fd, fp) {
-		logsmap[LOGINFO].Printf("получение данных о чеке по ссылке %v", hyperlinkonjson)
+		strlog := fmt.Sprintf("получение данных о чеке по ссылке %v", hyperlinkonjson)
+		logginInFile(strlog)
 		resp, err = http.Get(hyperlinkonjson)
 		if err != nil {
 			errDescr := fmt.Sprintf("ошибка(не удалось получить ответ от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
@@ -1194,7 +1303,8 @@ func fetchcheck(fd, fp, hyperlinkonjson string) (TReceipt, string, error) {
 		}
 		ioutil.WriteFile(fullFileName, body, 0644)
 	} else {
-		logsmap[LOGINFO].Printf("получение данных из файла %v ", fullFileName)
+		strlog := fmt.Sprintf("получение данных из файла %v ", fullFileName)
+		logginInFile(strlog)
 		body, err = ioutil.ReadFile(fullFileName)
 		if err != nil {
 			errDescr := fmt.Sprintf("ошибка(чтения данные с диска): %v. Не удалось получить данные с диска файла %v", err, fullFileName)
@@ -1240,6 +1350,23 @@ func getSposobRash(sposob string) string {
 	return res
 }
 
+func getOsnFromChernovVal(osnChernvVal string) string {
+	res := ""
+	switch strings.ToLower(osnChernvVal) {
+	case "осн":
+		res = "osn"
+	case "усн доход":
+		res = "usnIncome"
+	case "усн доход-расход":
+		res = "usnIncomeOutcome"
+	case "есн":
+		res = "esn"
+	case "патент":
+		res = "patent"
+	}
+	return res
+}
+
 func getPredmRasch(predm string) string {
 	res := "commodity"
 	switch predm {
@@ -1274,7 +1401,10 @@ func replacefieldbyjsonhrep(hyperlhtml string) string {
 	//https://ofd.ru/Document/RenderDoc?RawId=a1c0fddc-917c-0b93-6b30-25eb0ee91259
 	//to
 	//https://ofd.ru/Document/ReceiptJsonDownload?DocId=a1c0fddc-917c-0b93-6b30-25eb0ee91259
-	return strings.ReplaceAll(hyperlhtml, "RenderDoc?RawId=", "ReceiptJsonDownload?DocId=")
+	//"=ГИПЕРССЫЛКА(""https://ofd.ru/Document/RenderDoc?RawId=5c581117-0587-d6ba-98fd-b404c6da4627"";""Перейти"")"
+	s, _ := strings.CutPrefix(hyperlhtml, "=ГИПЕРССЫЛКА(\"")
+	s, _ = strings.CutSuffix(s, "\";\"Перейти\")")
+	return strings.ReplaceAll(s, "RenderDoc?RawId=", "ReceiptJsonDownload?DocId=")
 }
 
 func alredyGettedFetch(fd, fp string) bool {
@@ -1324,4 +1454,26 @@ func setMarkInArolDriverCorrenspOFDMark(prcode *TProductCodesAtol, mark, typeCod
 	default:
 		prcode.Tag1305 = mark
 	}
+}
+
+func logginInFile(loggin string) {
+	if *debug {
+		logsmap[LOGINFO].Println(loggin)
+	}
+}
+
+func getBoolFromString(val string, onErrorDefault bool) (bool, error) {
+	var err error
+	res := onErrorDefault
+	if (val == "да") || (val == "ДА") || (val == "Да") || (val == "yes") || (val == "Yes") || (val == "YES") {
+		res = true
+	} else if (val == "НЕТ") || (val == "нет") || (val == "Нет") || (val == "no") || (val == "No") || (val == "NO") {
+		res = false
+	} else {
+		res, err = strconv.ParseBool(val)
+		if err != nil {
+			res = onErrorDefault
+		}
+	}
+	return res, err
 }

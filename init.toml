@@ -1,7 +1,23 @@
-[template.ofd]
-ofdru = "ofd.ru"
-firstofd = "1-ofd.ru"
-conturofd = "kontur.ru"
+[[template.ofd]]
+num = 1
+name = "ofdru"
+descr = "ofd.ru - петер"
+[[template.ofd]]
+num = 2
+name = "firstofd"
+descr = "1-ofd.ru - первый ОФД"
+[[template.ofd]]
+num = 3
+name = "conturofd"
+descr = "контур ОФД"
+[[template.ofd]]
+num = 4
+name = "sbis"
+descr = "СБИС"
+#ofdru = "ofd.ru"
+#firstofd = "1-ofd.ru"
+#conturofd = "kontur.ru"
+#sbis = "сбис"
 
 [fields.kkt]
 inn = "инн фирмы"
@@ -117,6 +133,7 @@ stavkaNDS10 = "#inv$Сумма НДС чека по ставке 10% (1103)"
 stavkaNDS20 = "#inv$Сумма НДС чека по ставке 20% (1102)"
 stavkaNDS110 = "#inv$Сумма НДС чека по расч. ставке 10/110 (1107)"
 stavkaNDS120 = "#inv$Сумма НДС чека по расч. ставке 20/120 (1106)"
+mark = "КТ GS1.М (1305)"
 bindposfieldkassa = "#analyse$Номер чека" #//0006989495006718_7280440500080718_5045
 bindposfieldcheck = "#analyse$Номер чека"
 
@@ -136,7 +153,7 @@ kassir = "#inv$Кассир"
 date = "Дата создания документа"
 osn = "#analyse:link"
 tag1054 = "#inv$Признак расчета (тег 1054)"
-link = "#inv$Имя кассы"
+link = "#inv$Ссылка на документ" #Имя кассы"
 bindheadfieldkassa = "regnumkkt"
 bindheadfieldcheck = "fd"
 
@@ -153,3 +170,46 @@ stavkaNDS20 = "Сумма НДС 20%, руб. (тег 1102)"
 mark = "#analyse:link$"
 bindposfieldkassa = "Регистрационный номер ККТ"
 bindposfieldcheck = "Номер фискального документа"
+
+[sbis]
+#[fields.kkt]
+inn = "ИНН"
+regnumkkt = "Рег. № ККТ"
+zavnumkkt = "Зав. № ККТ"
+fnkkt = "Зав. № ФН"
+#[fields.check]
+numSm = "№ смены"
+fd = "№ ФД"
+fp = "ФП"
+amountCheck = "Сумма"
+nal = "Наличными"
+bez = "Безналичными"
+credit = "Кредит"
+avance = "Аванс"
+vstrechpredst = "Обмен"
+kassir = "Кассир"
+#innkassir = "инн кассира"
+date = "Дата и время"
+#time = "время чека"
+osn = "Система налогообложения"
+tag1054 = "Тип операции"
+typeCheck = "Тип документа"
+#link = "ссылка чека"
+bindheadfieldkassa = "regnumkkt"
+bindheadfieldcheck = "fd"
+#[fields.positions]
+name = "Наименование предмета расчета"
+quantity = "Количество"
+price = "Цена"
+amountpos = "Стоимость"
+#predmet = "предмет расчета"
+#sposob = "способ расчета"
+##stavkaNDSAll = "ставка НДС"
+stavkaNDS0 = "Сумма с НДС 0%"
+stavkaNDS10 = "НДС 10%"
+stavkaNDS20 = "НДС 20%"
+stavkaNDS110 = "НДС 10/110"
+stavkaNDS120 = "НДС 20/120"
+#mark = "марка"
+bindposfieldkassa = "Рег. № ККТ"
+bindposfieldcheck = "№ ФД"
