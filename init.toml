@@ -14,10 +14,10 @@ descr = "контур ОФД"
 num = 4
 name = "sbis"
 descr = "СБИС"
-#ofdru = "ofd.ru"
-#firstofd = "1-ofd.ru"
-#conturofd = "kontur.ru"
-#sbis = "сбис"
+[[template.ofd]]
+num = 5
+name = "platforma"
+descr = "Платформа ОФД"
 
 [fields.kkt]
 inn = "инн фирмы"
@@ -48,6 +48,7 @@ bindheadfieldkassa = "поле для связвание по кассе в та
 bindheadfieldcheck = "поле для связывания по чеку в таблице шапк"
 
 [fields.positions]
+numofpos = "номер позиции в чеке"
 name = "название товара"
 quantity = "количество товара"
 price = "цена товара"
@@ -55,6 +56,7 @@ amountpos = "сумма товара"
 predmet = "предмет расчета"
 sposob = "способ расчета"
 #stavkaNDSAll = "ставка НДС"
+stavkaNDS = "ставка НДС"
 stavkaNDS0 = "столбец суммы ставка НДС 0%"
 stavkaNDS10 = "столбец суммы ставка НДС 10%"
 stavkaNDS20 = "столбец суммы ставка НДС 20%"
@@ -63,6 +65,15 @@ stavkaNDS120 = "столбец суммы ставка НДС 120"
 mark = "марка"
 bindposfieldkassa = "поле для связывания по кассе в таблице позций"
 bindposfieldcheck = "поле для связывания по чеку в таблице позций"
+
+[fields.others]
+numofposother = "номер позиции в чеке"
+markother = "марка"
+statusMarkCRPT = "статус проверки в ЦРПТ марки"
+statusMarkFN = "статус проверки в ФН марки"
+bindotherfieldkassa = "поле для связывания по кассе в таблице позций"
+bindotherfieldcheck = "поле для связывания по чеку в таблице позций"
+
 
 [conturofd]
 #-colFNCh 0 -colKassaNameCh 1 -colFDCh 2 -colFPCh 3 -col_kassir 4 -colDate 5 -colTypeCheck 6 -colTypeOper 7 -colNal 8 -colBez 9 -colAvPay 10 -colCred 11 -colObm 12 -colSumNDS20 13
@@ -213,3 +224,56 @@ stavkaNDS120 = "НДС 20/120"
 #mark = "марка"
 bindposfieldkassa = "Рег. № ККТ"
 bindposfieldcheck = "№ ФД"
+
+[platforma]
+#[fields.kkt]
+#inn = "инн фирмы"
+regnumkkt = "РНМ"
+#zavnumkkt = "заводской номер ККТ"
+fnkkt = "Номер ФН"
+#nameofkkt = "имя ККТ в ОФД"
+#[fields.check]
+#numSm = "номер смены"
+fd = "Номер документа"
+fp = "ФП"
+#amountCheck = "сумма чека"
+nal = "Наличными"
+bez = "Электронными"
+credit = "Постоплата(кредитами)"
+avance = "Зачет предоплаты (аванса)"
+vstrechpredst = "Встречными представлениями"
+kassir = "Кассир"
+innkassir = "ИНН кассира"
+date = "Дата/время"
+#time = "время чека"
+osn = "Тип налогообложения"
+tag1054 = "Признак расчета"
+typeCheck = "Тип ФД"
+link = "Посмотреть чек"
+bindheadfieldkassa = "regnumkkt"
+bindheadfieldcheck = "fd"
+#[fields.positions]
+numofpos = "Номер товара в чеке"
+name = "Наименование"
+quantity = "Количество единиц измерения в чеке"
+price = "Цена товара"
+amountpos = "Сумма товара"
+predmet = "Признак предмета расчета (тег 1212)"
+sposob = "Признак способа расчета (тег 1214)"
+#stavkaNDSAll = "ставка НДС"
+stavkaNDS = "Ставка НДС по товару"
+stavkaNDS0 = "Сумма НДС 0% по чеку"
+stavkaNDS10 = "Сумма НДС 10% по чеку"
+stavkaNDS20 = "Сумма НДС 20% по чеку"
+stavkaNDS110 = "Сумма НДС 10/110% по чеку"
+stavkaNDS120 = "Сумма НДС 20/120% по чеку"
+#mark = "марка"
+bindposfieldkassa = "РНМ"
+bindposfieldcheck = "Номер документа"
+#[fields.others]
+numofposother = "Позиция в чеке"
+markother = "Код маркировки"
+statusMarkCRPT = "Статус проверки кода в ЦРПТ"
+statusMarkFN = "Статус проверки кода в ФН"
+bindotherfieldkassa = "РНМ"
+bindotherfieldcheck = "Номер ФД"

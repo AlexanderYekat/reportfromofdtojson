@@ -19,7 +19,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_01_30_04"
+const VERSION_OF_PROGRAM = "2024_01_31_05"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -127,19 +127,26 @@ type TPayment struct {
 
 type TPosition struct {
 	Type            string   `json:"type"`
-	Name            string   `json:"name,omitempty"`
-	Price           float64  `json:"price,omitempty"`
-	Quantity        float64  `json:"quantity,omitempty"`
-	Amount          float64  `json:"amount,omitempty"`
-	MeasurementUnit string   `json:"measurementUnit,omitempty"`
-	PaymentMethod   string   `json:"paymentMethod,omitempty"`
-	PaymentObject   string   `json:"paymentObject,omitempty"`
+	Name            string   `json:"name"`
+	Price           float64  `json:"price"`
+	Quantity        float64  `json:"quantity"`
+	Amount          float64  `json:"amount"`
+	MeasurementUnit string   `json:"measurementUnit"`
+	PaymentMethod   string   `json:"paymentMethod"`
+	PaymentObject   string   `json:"paymentObject"`
 	Tax             *TTaxNDS `json:"tax,omitempty"`
 	//fot type tag1192 //AdditionalAttribute
 	Value        string             `json:"value,omitempty"`
 	Print        bool               `json:"print,omitempty"`
 	ProductCodes *TProductCodesAtol `json:"productCodes,omitempty"`
 	ImcParams    *TImcParams        `json:"imcParams,omitempty"`
+}
+
+type TTag1192_91 struct {
+	Type  string `json:"type"`
+	Name  string `json:"name,omitempty"`
+	Value string `json:"value,omitempty"`
+	Print bool   `json:"print,omitempty"`
 }
 
 type TOperator struct {
@@ -162,9 +169,10 @@ type TCorrectionCheck struct {
 	CorrectionBaseDate   string      `json:"correctionBaseDate"`
 	CorrectionBaseNumber string      `json:"correctionBaseNumber"`
 	Operator             TOperator   `json:"operator"`
-	Items                []TPosition `json:"items"`
-	Payments             []TPayment  `json:"payments"`
-	Total                float64     `json:"total,omitempty"`
+	//Items                []TPosition `json:"items"`
+	Items    []interface{} `json:"items"`
+	Payments []TPayment    `json:"payments"`
+	Total    float64       `json:"total,omitempty"`
 }
 
 // json чека в ОФД.RU
@@ -239,6 +247,7 @@ var ofdchoice = flag.Int("ofd", 0, "Порядковый номер ОФД в ф
 var email = flag.String("email", "", "email, на которое будут отсылаться все чеки")
 var printonpaper = flag.Bool("print", true, "печатать на бумагу (true) или не печатать (false) чек коорекции")
 var debug = flag.Bool("debug", false, "режим отладки")
+var fetchalways = flag.Bool("fetchalways", true, "всегда посылать запросы по ссылке, не зависимо от предмета расчета")
 
 var FieldsNums map[string]int
 var FieldsNames map[string]string
@@ -336,10 +345,17 @@ func main() {
 	if *email == "" {
 		*printonpaper = true
 	}
+	if OFD == "ofdru" {
+		fmt.Print("Всегда посылать запросы по ссылке, не зависимо от предмета расчета (да/нет, по умолчанию (да)):")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
+		*fetchalways, _ = getBoolFromString(input.Text(), *fetchalways)
+	}
 	fmt.Println("**********************")
 	fmt.Println("ОФД: ", ofdsinit[OFD])
 	fmt.Println("email: ", *email)
 	fmt.Println("печать чеки на бумаге: ", *printonpaper)
+	fmt.Println("Всегда посылать запросы по ссылке, не зависимо от предмета расчета ", *fetchalways)
 	fmt.Print("Настройки верны? Продолжить? (да/нет, по умолчанию: да): ")
 	input := bufio.NewScanner(os.Stdin)
 	input.Scan()
@@ -507,6 +523,9 @@ func main() {
 					neededGetMarks = true
 					break
 				}
+			}
+			if *fetchalways {
+				neededGetMarks = true
 			}
 			logginstr := fmt.Sprintf("neededGetMarks = %v", neededGetMarks)
 			logginInFile(logginstr)
@@ -927,13 +946,13 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	}
 	//в тег 1192 - записываем ФП (если нет ФП, то записываем ФД)
 	if currFP != "" {
-		newAdditionalAttribute := TPosition{Type: "additionalAttribute"}
+		newAdditionalAttribute := TTag1192_91{Type: "additionalAttribute"}
 		newAdditionalAttribute.Value = currFP
 		newAdditionalAttribute.Print = true
 		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
 	}
 	if headofcheck[COLFD] != "" {
-		newAdditionalAttribute := TPosition{Type: "userAttribute"}
+		newAdditionalAttribute := TTag1192_91{Type: "userAttribute"}
 		newAdditionalAttribute.Name = "ФД"
 		newAdditionalAttribute.Value = headofcheck[COLFD]
 		newAdditionalAttribute.Print = true
@@ -980,6 +999,7 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		} else if pos[COLSTAVKANDS110] != "" {
 			newPos.Tax.Type = STAVKANDS110
 		}
+		//chanePredmetRascheta := false
 		if pos[COLMARK] != "" {
 			measunit := "piece"
 			if qch != 1 {
@@ -1007,12 +1027,26 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 				newPos.ImcParams.ItemInfoCheckResult.ImcStatusInfo = true
 				newPos.ImcParams.ItemInfoCheckResult.ImcEstimatedStatusCorrect = true
 				newPos.ImcParams.ItemInfoCheckResult.EcrStandAloneFlag = false
+				//chanePredmetRascheta = true
 			}
+			//if chanePredmetRascheta {
+			//	newPos.PaymentObject = addMarkToPredmetRasheta(newPos.PaymentObject)
+			//}
 		}
 		checkCorr.Items = append(checkCorr.Items, newPos)
 	} //запись всех позиций чека
 	return checkCorr, "", nil
 }
+
+//func addMarkToPredmetRasheta(predmet string) string {
+//	if predmet == "excise" {
+//		return "exciseWithMarking"
+//	}
+//	if predmet == "commodity" {
+//		return "commodityWithMarking"
+//	}
+//	return predmet
+//}
 
 func doesFileExist(fullFileName string) (found bool, err error) {
 	found = false
@@ -1331,7 +1365,7 @@ func fetchcheck(fd, fp, hyperlinkonjson string) (TReceipt, string, error) {
 func notEmptyFloatField(val string) bool {
 	res := true
 	if val == "" || val == "0.00" || val == "0.00 ₽" || val == "0,00 ₽" || val == "0,00" ||
-		val == "0,00 р" {
+		val == "0,00 р" || val == "-" {
 		res = false
 	}
 	return res
