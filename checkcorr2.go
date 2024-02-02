@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -19,7 +20,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_01_31_05"
+const VERSION_OF_PROGRAM = "2024_02_02_05"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -63,6 +64,12 @@ const COLSTAVKANDS120 = "stavkaNDS"
 const COLMARK = "mark"
 const COLBINDPOSFIELDKASSA = "bindposfieldkassa"
 const COLBINDPOSFIELDCHECK = "bindposfieldcheck"
+const COLBINDPOSPOSFIELDCHECK = "bindposposfieldcheck"
+
+const COLMARKOTHER = "markother"
+const COLBINDOTHERKASSS = "bindotherfieldkassa"
+const COLBINDOTHERCHECK = "bindotherfieldcheck"
+const COLBINDOTHERPOS = "bindotherposfieldcheck"
 
 const STAVKANDSNONE = "none"
 const STAVKANDS0 = "vat0"
@@ -140,6 +147,7 @@ type TPosition struct {
 	Print        bool               `json:"print,omitempty"`
 	ProductCodes *TProductCodesAtol `json:"productCodes,omitempty"`
 	ImcParams    *TImcParams        `json:"imcParams,omitempty"`
+	//Mark         string             `json:"mark,omitempty"`
 }
 
 type TTag1192_91 struct {
@@ -232,8 +240,8 @@ type TItemInfoCheckResult struct {
 
 type TImcParams struct {
 	ImcType             string                `json:"imcType"`
-	Imc                 string                `json:"ims"`
-	ItemEstimatedStatus string                `json:"itemEstimatedStatus"`
+	Imc                 string                `json:"imc"`
+	ItemEstimatedStatus string                `json:"itemEstimatedStatus,omitempty"`
 	ImcModeProcessing   int                   `json:"imcModeProcessing"`
 	ImcBarcode          string                `json:"imcBarcode,omitempty"`
 	ItemInfoCheckResult *TItemInfoCheckResult `json:"itemInfoCheckResult,omitempty"`
@@ -254,6 +262,7 @@ var FieldsNames map[string]string
 var OFD string
 var AllFieldsHeadOfCheck []string
 var AllFieldPositionsOfCheck []string
+var AllFieldOtherOfCheck []string
 
 // var emulation = flag.Bool("emul", false, "эмуляция")
 func main() {
@@ -385,6 +394,9 @@ func main() {
 	for k := range data["fields"].(map[string]interface{})["positions"].(map[string]interface{}) {
 		AllFieldPositionsOfCheck = append(AllFieldPositionsOfCheck, k)
 	}
+	for k := range data["fields"].(map[string]interface{})["others"].(map[string]interface{}) {
+		AllFieldOtherOfCheck = append(AllFieldOtherOfCheck, k)
+	}
 	//инициализация директории результатов
 	if foundedLogDir, _ := doesFileExist(JSONRES); !foundedLogDir {
 		os.Mkdir(JSONRES, 0777)
@@ -408,13 +420,24 @@ func main() {
 	if err != nil {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header.csv) входных данных (шапки чека)", err)
 		logsmap[LOGERROR].Println(descrError)
-		panic(descrError)
+		log.Panic(descrError)
 	}
 	//инициализация номеров колонок
 	if len(lines) > 0 {
-		FieldsNums = getNumberOfFieldsInCSV(lines[0], FieldsNames, FieldsNums, true)
+		FieldsNums = getNumberOfFieldsInCSV(lines[0], FieldsNames, FieldsNums, "head")
 	}
-	fillFieldsNumByPositionTable(FieldsNames, FieldsNums)
+	//fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_header.csv", "head")
+	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_poss.csv", "positions")
+	if err != nil {
+		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_poss.csv) входных данных (позиции чека)", err)
+		logsmap[LOGERROR].Println(descrError)
+		log.Panic(descrError)
+	}
+	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_other.csv", "other")
+	if err != nil {
+		logstr := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_other.csv) входных данных (прочие данные чека(например марик))", err)
+		logginInFile(logstr)
+	}
 	//fmt.Println("FieldsNames", FieldsNames)
 	//fmt.Println("-------------------")
 	//fmt.Println("FieldsNums", FieldsNums)
@@ -453,6 +476,7 @@ func main() {
 			logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не опредлена касса", line)
 			continue
 		}
+		//проверяем тип чека
 		if strings.Contains(HeadOfCheck[COLTYPECHECK], "Отчет об открытии смены") ||
 			strings.Contains(HeadOfCheck[COLTYPECHECK], "Отчет о закрытии смены") {
 			logginInFile("пропускаем строку, так как она является отчетом о закрытии или открытии смены")
@@ -573,6 +597,7 @@ func main() {
 					//fmt.Printf("Code_GS_1M=%v.\n", itemPos.ProductCode.Code_GS_1M)
 					markOfField := ""
 					nameTypeOfMark := ""
+					//"Code_Undefined":null,"Code_EAN_8":null,"Code_EAN_13":"4603739334345","Code_ITF_14":null,"Code_GS_1":null,"Code_GS_1M":null,"Code_KMK":null,"Code_MI":null,"Code_EGAIS_2":null,"Code_EGAIS_3":null,"Code_F_1":null,"Code_F_2":null,"Code_F_3":null,"Code_F_4":null,"Code_F_5":null,"Code_F_6":null
 					if itemPos.ProductCode.Code_Undefined != "" {
 						nameTypeOfMark = "Undefined"
 						markOfField = itemPos.ProductCode.Code_Undefined
@@ -642,10 +667,14 @@ func main() {
 					}
 					for _, posFined := range findedPositions {
 						//fmt.Printf("posFined=%v.\n", posFined[COLNAME])
-						if strings.EqualFold(strings.ToLower(itemPos.Name), strings.ToLower(posFined[COLNAME])) {
+						if strings.EqualFold(strings.ToLower(strings.TrimSpace(itemPos.Name)), strings.ToLower(strings.TrimSpace(posFined[COLNAME]))) {
 							//fmt.Println("нашли позицию", itemPos.Name)
 							//logsmap[LOG]
 							//posFined[COLMARK] = itemPos.ProductCode.Code_GS_1M
+							if posFined[COLMARK] != "" {
+								//fmt.Println("позиция уже имеет марку", posFined[COLMARK])
+								continue
+							}
 							posFined[COLMARK] = markOfField
 							posFined[NAMETYPEOFMARK] = nameTypeOfMark
 							break
@@ -730,10 +759,15 @@ func main() {
 	input.Scan()
 }
 
-func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[string]int) error {
-	f, err := os.Open(DIRINFILES + "checks_poss.csv")
+func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[string]int, filename, partOfCheck string) error {
+	fullnameoffile := DIRINFILES + filename
+	existfile, _ := doesFileExist(fullnameoffile)
+	if !existfile {
+		return fmt.Errorf("файл %v не найден", fullnameoffile)
+	}
+	f, err := os.Open(fullnameoffile)
 	if err != nil {
-		log.Fatal("не удлась открыть файл позиций чека", err)
+		log.Panic("не удлась открыть файл позиций чека", err)
 	}
 	defer f.Close()
 	csv_red := csv.NewReader(f)
@@ -745,7 +779,7 @@ func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[
 		log.Fatal("не удлась прочитать csv файл позиций чека", err)
 	}
 	if len(lines) > 0 {
-		getNumberOfFieldsInCSV(lines[0], fieldsnames, fieldsnums, false)
+		getNumberOfFieldsInCSV(lines[0], fieldsnames, fieldsnums, partOfCheck)
 	}
 	return nil
 }
@@ -757,7 +791,9 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 	summsPayment := make(map[string]float64)
 	f, err := os.Open(DIRINFILES + "checks_poss.csv")
 	if err != nil {
-		log.Panic("не удлась открыть файл позиций чека", err)
+		errDescr := fmt.Sprintf("ошибка (%v), не удлась открыть файл позиций чека", err)
+		logsmap[LOGERROR].Println(errDescr)
+		log.Panic(errDescr)
 	}
 	defer f.Close()
 	csv_red := csv.NewReader(f)
@@ -766,7 +802,9 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 	csv_red.Comma = ';'
 	lines, err := csv_red.ReadAll()
 	if err != nil {
-		log.Panic("не удлась прочитать csv файл позиций чека", err)
+		errDescr := fmt.Sprintf("ошибка (%v). не удлась прочитать csv файл позиций чека", err)
+		logsmap[LOGERROR].Println(errDescr)
+		log.Panic(errDescr)
 	}
 	currPos := 0
 	currLine := 0
@@ -792,9 +830,9 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 		if (valbindkassainhead != valbindkassainpos) || (valbindcheckinhead != valbindcheckpos) {
 			continue
 		}
-		if !notEmptyFloatField(getfieldval(line, fieldsnums, COLQUANTITY)) {
-			continue //пропускаем строки с пустым или нулевым количесве
-		}
+		//if !notEmptyFloatField(getfieldval(line, fieldsnums, COLQUANTITY)) {
+		//	continue //пропускаем строки с пустым или нулевым количесве
+		//}
 		logstr := fmt.Sprintln("Найдена строка", line)
 		logginInFile(logstr)
 		currPos++
@@ -823,15 +861,77 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 				res[currPos][field] = getfieldval(line, fieldsnums, field)
 			}
 		}
-		//for k := range FieldsNums {
-		//	res[currPos][k] = getfieldval(line, fieldsnums, k)
-		//}
+		if OFD == "platforma" {
+			//ищем марки в таблице марок
+			logginInFile("ищем марки в дполнительном файле платформы ОФД")
+			marka, err := findMarkInOtherFile(res[currPos][COLBINDPOSFIELDKASSA], res[currPos][COLBINDPOSFIELDCHECK],
+				res[currPos][COLBINDPOSPOSFIELDCHECK], fieldsnums)
+			if err != nil {
+				errDescr := fmt.Sprintf("ошибка (%v), не удалось прочитать файл марок", err)
+				logsmap[LOGERROR].Println(errDescr)
+				log.Panic(errDescr)
+			}
+			if marka != "" {
+				res[currPos][COLMARK] = marka
+			} else {
+				logginInFile("марка в файле марок не найдена")
+			}
+		}
 	} //перебор всех строк в файле позиций чека
-	//if len(res) > 0 {
-	//fmt.Println(res)
-	//}
 	return res, summsPayment
 } //findPositions
+
+func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int) (string, error) {
+	var marka string
+	//проверяем существует ли файл
+	logstr := fmt.Sprintln("ищме в файле марок:", "kassa", kassa, "doc", doc, "posnum", posnum)
+	logginInFile(logstr)
+	if fileofmarksexist, _ := doesFileExist(DIRINFILES + "checks_other.csv"); !fileofmarksexist {
+		//logginInFile("файл марок не существует")
+		return "", nil //если не существует, то просто не т марок
+	}
+	f, err := os.Open(DIRINFILES + "checks_other.csv")
+	if err != nil {
+		errDescr := fmt.Sprintf("ошибка (%v), не удлась открыть файл марок чека", err)
+		logsmap[LOGERROR].Println(errDescr)
+		return "", errors.New(errDescr)
+	}
+	defer f.Close()
+	csv_red := csv.NewReader(f)
+	csv_red.FieldsPerRecord = -1
+	csv_red.LazyQuotes = true
+	csv_red.Comma = ';'
+	lines, err := csv_red.ReadAll()
+	if err != nil {
+		errDescr := fmt.Sprintf("ошибка (%v), не удлась открыть csv файл марок чека", err)
+		logsmap[LOGERROR].Println(errDescr)
+		return "", errors.New(errDescr)
+	}
+	currLine := 0
+	for _, line := range lines { //перебор всех строк в файле позиций чека
+		currLine++
+		if currLine == 1 {
+			continue
+		}
+		//logstr := fmt.Sprintln(line)
+		//logginInFile(logstr)
+		kassaother := getfieldval(line, fieldsnums, COLBINDOTHERKASSS)
+		docother := getfieldval(line, fieldsnums, COLBINDOTHERCHECK)
+		posnumother := getfieldval(line, fieldsnums, COLBINDOTHERPOS)
+		//logstr = fmt.Sprintln("строка в файле марок:", "kassaother", kassaother, "docother", docother, "posnumother", posnumother)
+		//logginInFile(logstr)
+		if (kassaother != kassa) || (docother != doc) || (posnumother != posnum) {
+			//logginInFile("не подходит строка")
+			continue
+		}
+		//logginInFile("подходит строка")
+		marka = getfieldval(line, fieldsnums, COLMARKOTHER)
+		//logstr = fmt.Sprintln("марка", marka)
+		//logginInFile(logstr)
+		break
+	}
+	return marka, nil
+}
 
 func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[string]string) (TCorrectionCheck, string, error) {
 	var checkCorr TCorrectionCheck
@@ -982,6 +1082,15 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			return checkCorr, descrErr, err
 		}
 		newPos.Amount = sch
+		if qch == 0 {
+			if prch != 0 {
+				qchTemp := (sch * 1000 / prch)
+				qch = math.Round(qchTemp) / 1000
+			} else {
+				qch = 1
+			}
+			newPos.Quantity = qch
+		}
 		newPos.MeasurementUnit = "piece" //liter
 		newPos.PaymentMethod = getSposobRash(pos[COLSPOSOB])
 		//commodityWithMarking
@@ -1013,21 +1122,22 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 				setMarkInArolDriverCorrenspOFDMark(newPos.ProductCodes, currMark, pos[NAMETYPEOFMARK])
 			} else {
 				currMarkInBase64 := base64.StdEncoding.EncodeToString([]byte(currMark))
+				//newPos.Mark = currMarkInBase64
 				newPos.ImcParams = new(TImcParams)
-				newPos.ImcParams.ImcType = "auto"
+				//newPos.ImcParams.ImcType = "auto"
 				newPos.ImcParams.Imc = currMarkInBase64
-				newPos.ImcParams.ItemEstimatedStatus = "itemStatusUnchanged" //статус товара не изменился
-				newPos.ImcParams.ItemUnits = measunit
-				newPos.ImcParams.ImcModeProcessing = 0
-				//newPos.ImcParams.ImcBarcode
-				newPos.ImcParams.ItemQuantity = newPos.Quantity
-				newPos.ImcParams.ItemInfoCheckResult = new(TItemInfoCheckResult)
-				newPos.ImcParams.ItemInfoCheckResult.ImcCheckFlag = true
-				newPos.ImcParams.ItemInfoCheckResult.ImcCheckResult = true
-				newPos.ImcParams.ItemInfoCheckResult.ImcStatusInfo = true
-				newPos.ImcParams.ItemInfoCheckResult.ImcEstimatedStatusCorrect = true
-				newPos.ImcParams.ItemInfoCheckResult.EcrStandAloneFlag = false
-				//chanePredmetRascheta = true
+				//newPos.ImcParams.ItemEstimatedStatus = "itemStatusUnchanged" //статус товара не изменился
+				//newPos.ImcParams.ItemUnits = measunit
+				//newPos.ImcParams.ImcModeProcessing = 0
+				////newPos.ImcParams.ImcBarcode
+				//newPos.ImcParams.ItemQuantity = newPos.Quantity
+				//newPos.ImcParams.ItemInfoCheckResult = new(TItemInfoCheckResult)
+				//newPos.ImcParams.ItemInfoCheckResult.ImcCheckFlag = true
+				//newPos.ImcParams.ItemInfoCheckResult.ImcCheckResult = true
+				//newPos.ImcParams.ItemInfoCheckResult.ImcStatusInfo = true
+				//newPos.ImcParams.ItemInfoCheckResult.ImcEstimatedStatusCorrect = true
+				//newPos.ImcParams.ItemInfoCheckResult.EcrStandAloneFlag = false
+				////chanePredmetRascheta = true
 			}
 			//if chanePredmetRascheta {
 			//	newPos.PaymentObject = addMarkToPredmetRasheta(newPos.PaymentObject)
@@ -1223,15 +1333,21 @@ func getNumberOfFieldsInCSVloc(line []string, fieldsnames map[string]string, fie
 	return fieldsnums
 }
 
-func getNumberOfFieldsInCSV(line []string, fieldsnames map[string]string, fieldsnums map[string]int, headAndNotOfPositions bool) map[string]int {
+func getNumberOfFieldsInCSV(line []string, fieldsnames map[string]string, fieldsnums map[string]int, partOfCheck string) map[string]int {
 	var fieldsOfBlock []string
-	if headAndNotOfPositions {
-		fieldsOfBlock = AllFieldsHeadOfCheck
-	} else {
+	if partOfCheck == "other" {
+		fieldsOfBlock = AllFieldOtherOfCheck
+	} else if partOfCheck == "positions" {
 		fieldsOfBlock = AllFieldPositionsOfCheck
+	} else {
+		fieldsOfBlock = AllFieldsHeadOfCheck
 	}
+	//headAndNotOfPositions = AllFieldOtherOfCheck
 	fieldsnums = getNumberOfFieldsInCSVloc(line, fieldsnames, fieldsnums, fieldsOfBlock, true)
-	if headAndNotOfPositions {
+	if partOfCheck == "other" {
+		return fieldsnums
+	}
+	if partOfCheck == "head" {
 		fieldsOfBlock = AllFieldPositionsOfCheck
 	} else {
 		fieldsOfBlock = AllFieldsHeadOfCheck

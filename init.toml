@@ -48,7 +48,6 @@ bindheadfieldkassa = "поле для связвание по кассе в та
 bindheadfieldcheck = "поле для связывания по чеку в таблице шапк"
 
 [fields.positions]
-numofpos = "номер позиции в чеке"
 name = "название товара"
 quantity = "количество товара"
 price = "цена товара"
@@ -65,14 +64,13 @@ stavkaNDS120 = "столбец суммы ставка НДС 120"
 mark = "марка"
 bindposfieldkassa = "поле для связывания по кассе в таблице позций"
 bindposfieldcheck = "поле для связывания по чеку в таблице позций"
+bindposposfieldcheck = "поле для связывания по позициям в доплнительной таблице"
 
 [fields.others]
-numofposother = "номер позиции в чеке"
 markother = "марка"
-statusMarkCRPT = "статус проверки в ЦРПТ марки"
-statusMarkFN = "статус проверки в ФН марки"
 bindotherfieldkassa = "поле для связывания по кассе в таблице позций"
 bindotherfieldcheck = "поле для связывания по чеку в таблице позций"
+bindotherposfieldcheck = "поле для связывания по позициям в таблице позиций"
 
 
 [conturofd]
@@ -253,7 +251,6 @@ link = "Посмотреть чек"
 bindheadfieldkassa = "regnumkkt"
 bindheadfieldcheck = "fd"
 #[fields.positions]
-numofpos = "Номер товара в чеке"
 name = "Наименование"
 quantity = "Количество единиц измерения в чеке"
 price = "Цена товара"
@@ -270,10 +267,9 @@ stavkaNDS120 = "Сумма НДС 20/120% по чеку"
 #mark = "марка"
 bindposfieldkassa = "РНМ"
 bindposfieldcheck = "Номер документа"
+bindposposfieldcheck = "Номер товара в чеке"
 #[fields.others]
-numofposother = "Позиция в чеке"
 markother = "Код маркировки"
-statusMarkCRPT = "Статус проверки кода в ЦРПТ"
-statusMarkFN = "Статус проверки кода в ФН"
 bindotherfieldkassa = "РНМ"
 bindotherfieldcheck = "Номер ФД"
+bindotherposfieldcheck = "Позиция в чеке"
