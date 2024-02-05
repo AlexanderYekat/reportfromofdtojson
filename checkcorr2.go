@@ -1,3 +1,4 @@
+//go:generate ./resource/goversioninfo.exe -icon=resource/icon.ico -manifest=resource/goversioninfo.exe.manifest
 package main
 
 import (
@@ -20,7 +21,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_02_02_05"
+const VERSION_OF_PROGRAM = "2024_02_05_03"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -184,15 +185,21 @@ type TCorrectionCheck struct {
 }
 
 // json чека в ОФД.RU
-type TReceipt struct {
+type TReceiptOFD struct {
 	Version  int `json:"Version"`
 	Document struct {
 		// document fields
-		Items []TItem `json:"Items"`
+		Amount_Total    int64      `json:"Amount_Total"`
+		Amount_Cash     int64      `json:"Amount_Cash"`
+		Amount_ECash    int64      `json:"Amount_ECash"`
+		Amount_Advance  int64      `json:"Amount_Advance"`
+		Amount_Loan     int64      `json:"Amount_Loan"`
+		Amount_Granting int64      `json:"Amount_Granting"`
+		Items           []TItemOFD `json:"Items"`
 		// other fields
 	} `json:"Document"`
 }
-type TItem struct {
+type TItemOFD struct {
 	Name                      string
 	Price                     float64
 	Quantity                  float64
@@ -256,6 +263,10 @@ var email = flag.String("email", "", "email, на которое будут от
 var printonpaper = flag.Bool("print", true, "печатать на бумагу (true) или не печатать (false) чек коорекции")
 var debug = flag.Bool("debug", false, "режим отладки")
 var fetchalways = flag.Bool("fetchalways", true, "всегда посылать запросы по ссылке, не зависимо от предмета расчета")
+var byPrescription = flag.Bool("prescription", false, "по предписанию (true) или самостоятельно (false)")
+var docNumbOfPrescription = flag.String("docnumbprescr", "", "номер документа предписания налоговой")
+var measurementUnitOfFracQuantSimple = flag.String("fracquantunitsimple", "кг", "мера измерения дробного количества товара без макри (кг, л, грамм, иная)")
+var measurementUnitOfFracQuantMark = flag.String("fracquantunitmark", "кг", "мера измерения дробного количества товара с маркой (кг, л, грамм, иная)")
 
 var FieldsNums map[string]int
 var FieldsNames map[string]string
@@ -286,6 +297,10 @@ func main() {
 		}
 	}()
 	if err != nil {
+		fmt.Println(descrError)
+		fmt.Println("Нажмите любую клавишу...")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
 		log.Panic(descrError)
 	}
 	logginInFile(runDescription)
@@ -294,7 +309,10 @@ func main() {
 	//читаем файл настроек
 	if _, err := toml.DecodeFile("init.toml", &data); err != nil {
 		fmt.Println(err)
-		panic(err)
+		fmt.Println("Нажмите любую клавишу...")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
+		log.Panic(err)
 	}
 	//читаем все доступные ОФД
 	ofdsinit = make(map[string]string)
@@ -360,13 +378,44 @@ func main() {
 		input.Scan()
 		*fetchalways, _ = getBoolFromString(input.Text(), *fetchalways)
 	}
+	fmt.Print("Чек коррекции по предписанию? (да/нет, по умолчанию: нет):")
+	input := bufio.NewScanner(os.Stdin)
+	input.Scan()
+	*byPrescription, _ = getBoolFromString(input.Text(), *byPrescription)
+	if *byPrescription {
+		fmt.Print("Введите номер предписания налоговой: ")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
+		*docNumbOfPrescription = input.Text()
+	}
+	fmt.Print("Мера измерения дробного количества товара без марки (кг, л, грамм, иная, по умолчанию кг):")
+	input = bufio.NewScanner(os.Stdin)
+	input.Scan()
+	*measurementUnitOfFracQuantSimple = input.Text()
+	if *measurementUnitOfFracQuantSimple == "" {
+		*measurementUnitOfFracQuantSimple = "кг"
+	}
+	fmt.Print("Мера измерения дробного количества товара с маркой (кг, л, грамм, иная, по умолчанию кг):")
+	input = bufio.NewScanner(os.Stdin)
+	input.Scan()
+	*measurementUnitOfFracQuantMark = input.Text()
+	if *measurementUnitOfFracQuantMark == "" {
+		*measurementUnitOfFracQuantMark = "кг"
+	}
+	//
 	fmt.Println("**********************")
 	fmt.Println("ОФД: ", ofdsinit[OFD])
 	fmt.Println("email: ", *email)
 	fmt.Println("печать чеки на бумаге: ", *printonpaper)
 	fmt.Println("Всегда посылать запросы по ссылке, не зависимо от предмета расчета ", *fetchalways)
+	fmt.Println("Чек коррекции по предписанию", *byPrescription)
+	if *byPrescription {
+		fmt.Println("Номер документа предписания налоговой", *docNumbOfPrescription)
+	}
+	fmt.Println("Мера измерения дробного количества товара без марки: ", *measurementUnitOfFracQuantSimple)
+	fmt.Println("Мера измерения дробного количества товара с маркой: ", *measurementUnitOfFracQuantMark)
 	fmt.Print("Настройки верны? Продолжить? (да/нет, по умолчанию: да): ")
-	input := bufio.NewScanner(os.Stdin)
+	//input = bufio.NewScanner(os.Stdin)
 	input.Scan()
 	contin := true
 	contin, _ = getBoolFromString(input.Text(), contin)
@@ -408,7 +457,10 @@ func main() {
 	if err != nil {
 		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header.csv) входных данных (шапки чека)", err)
 		logsmap[LOGERROR].Println(descrError)
-		log.Fatal(descrError)
+		fmt.Println("Нажмите любую клавишу...")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
+		log.Panic(descrError)
 	}
 	defer f.Close()
 	csv_red := csv.NewReader(f)
@@ -420,6 +472,9 @@ func main() {
 	if err != nil {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header.csv) входных данных (шапки чека)", err)
 		logsmap[LOGERROR].Println(descrError)
+		fmt.Println("Нажмите любую клавишу...")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
 		log.Panic(descrError)
 	}
 	//инициализация номеров колонок
@@ -431,6 +486,9 @@ func main() {
 	if err != nil {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_poss.csv) входных данных (позиции чека)", err)
 		logsmap[LOGERROR].Println(descrError)
+		fmt.Println("Нажмите любую клавишу...")
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
 		log.Panic(descrError)
 	}
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_other.csv", "other")
@@ -518,11 +576,134 @@ func main() {
 			}
 			break
 		}
+		amountOfCheck := 0.0
+		for _, pos := range findedPositions {
+			spos, err := strconv.ParseFloat(pos[COLAMOUNTPOS], 64)
+			if err != nil {
+				descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы для чека %v", err, pos[COLAMOUNTPOS], checkDescrInfo)
+				logsmap[LOGERROR].Println(descrErr)
+				continue
+			}
+			amountOfCheck += spos
+		}
+		mistakesInPayment := false
+		if OFD == "ofdru" {
+			mistakesInPayment = checkMistakeInPayments(amountOfCheck, summsOfPayment)
+			if mistakesInPayment {
+				logginInFile("ошибка в суммах оплат, пытаемся получить данные из ссылки чека")
+				var receipt TReceiptOFD
+				var descrErr string
+				var err error
+				hypperlinkjson := replacefieldbyjsonhrep(HeadOfCheck[COLLINK])
+				//fmt.Println("hypperlinkjson", hypperlinkjson)
+				receipt, descrErr, err = fetchcheck(HeadOfCheck[COLFD], HeadOfCheck[COLFP], hypperlinkjson)
+				analyzeComlite := true
+				if err != nil {
+					logsmap[LOGERROR].Println(descrErr)
+					analyzeComlite = false
+				}
+				if analyzeComlite {
+					summsOfPayment[COLNAL] = float64(receipt.Document.Amount_Cash) / 100
+					summsOfPayment[COLBEZ] = float64(receipt.Document.Amount_ECash) / 100
+					summsOfPayment[COLCREDIT] = float64(receipt.Document.Amount_Loan) / 100
+					summsOfPayment[COLAVANCE] = float64(receipt.Document.Amount_Advance) / 100
+					summsOfPayment[COLVSTRECHPREDST] = float64(receipt.Document.Amount_Granting) / 100
+					mistakesInPayment = checkMistakeInPayments(amountOfCheck, summsOfPayment)
+				}
+			}
+
+		}
+		if mistakesInPayment {
+			deskMistPaym := fmt.Sprintf("Для чека %v не возможно определить сумму оплат. Сделаёте это вручную. И укажите суммы оплат далее...", checkDescrInfo)
+			summPaymentsCurrDescr := fmt.Sprintf("Сейчас суммы оплат такие: наличными %v", summsOfPayment[COLNAL])
+			summPaymentsCurrDescr += fmt.Sprintf(", картой %v", summsOfPayment[COLBEZ])
+			summPaymentsCurrDescr += fmt.Sprintf(", кредитом %v", summsOfPayment[COLCREDIT])
+			summPaymentsCurrDescr += fmt.Sprintf(", дебетом %v", summsOfPayment[COLAVANCE])
+			summPaymentsCurrDescr += fmt.Sprintf(", встречным представлением %v", summsOfPayment[COLVSTRECHPREDST])
+			logginInFile(deskMistPaym)
+			logginInFile(summPaymentsCurrDescr)
+			fmt.Println(deskMistPaym)
+			fmt.Println(summPaymentsCurrDescr)
+			fmt.Printf("Сумма чека %v\n", amountOfCheck)
+
+			fmt.Printf("Введите сумму оплаты наличными (%v):\n", summsOfPayment[COLNAL])
+			input := bufio.NewScanner(os.Stdin)
+			input.Scan()
+			nalch := summsOfPayment[COLNAL]
+			nalstr := input.Text()
+			if notEmptyFloatField(nalstr) {
+				nalch, err = strconv.ParseFloat(nalstr, 64)
+				if err != nil {
+					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для налчиного расчёта", err, nalstr)
+					logsmap[LOGERROR].Println(descrErr)
+				}
+			}
+			fmt.Printf("Введите сумму оплаты безналичными (%v):\n", summsOfPayment[COLBEZ])
+			input.Scan()
+			bezch := summsOfPayment[COLBEZ]
+			bezstr := input.Text()
+			if notEmptyFloatField(bezstr) {
+				bezch, err = strconv.ParseFloat(bezstr, 64)
+				if err != nil {
+					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для безналичного расчёта", err, bezstr)
+					logsmap[LOGERROR].Println(descrErr)
+				}
+			}
+			fmt.Printf("Введите сумму оплаты дебетом (%v):\n", summsOfPayment[COLAVANCE])
+			input.Scan()
+			avnch := summsOfPayment[COLAVANCE]
+			avnstr := input.Text()
+			if notEmptyFloatField(avnstr) {
+				avnch, err = strconv.ParseFloat(avnstr, 64)
+				if err != nil {
+					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для аванса", err, avnstr)
+					logsmap[LOGERROR].Println(descrErr)
+				}
+			}
+			fmt.Printf("Введите сумму оплаты кредитом (%v):\n", summsOfPayment[COLCREDIT])
+			input.Scan()
+			crdch := summsOfPayment[COLCREDIT]
+			crdstr := input.Text()
+			if notEmptyFloatField(crdstr) {
+				crdch, err = strconv.ParseFloat(crdstr, 64)
+				if err != nil {
+					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для кредита расчёта", err, crdstr)
+					logsmap[LOGERROR].Println(descrErr)
+				}
+			}
+			fmt.Printf("Введите сумму оплаты кредитом (%v):\n", summsOfPayment[COLVSTRECHPREDST])
+			input.Scan()
+			vstrch := summsOfPayment[COLVSTRECHPREDST]
+			vstrstr := input.Text()
+			if notEmptyFloatField(vstrstr) {
+				vstrch, err = strconv.ParseFloat(vstrstr, 64)
+				if err != nil {
+					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для встречного представления", err, vstrstr)
+					logsmap[LOGERROR].Println(descrErr)
+				}
+			}
+			summsOfPayment[COLNAL] = nalch
+			summsOfPayment[COLBEZ] = bezch
+			summsOfPayment[COLAVANCE] = avnch
+			summsOfPayment[COLCREDIT] = crdch
+			summsOfPayment[COLVSTRECHPREDST] = vstrch
+			summPaymentsCurrDescr = fmt.Sprintf("Сейчас суммы оплат такие: наличными %v", summsOfPayment[COLNAL])
+			summPaymentsCurrDescr += fmt.Sprintf(", картой %v", summsOfPayment[COLBEZ])
+			summPaymentsCurrDescr += fmt.Sprintf(", кредитом %v", summsOfPayment[COLCREDIT])
+			summPaymentsCurrDescr += fmt.Sprintf(", дебетом %v", summsOfPayment[COLAVANCE])
+			summPaymentsCurrDescr += fmt.Sprintf(", встречным представлением %v", summsOfPayment[COLVSTRECHPREDST])
+			fmt.Println(summPaymentsCurrDescr)
+			logginInFile("суммы оплат были изменены")
+			logginInFile(deskMistPaym)
+			logginInFile(summPaymentsCurrDescr)
+			fmt.Printf("Нажмите любую клавишу для продолжения формирования json-заданий...")
+			input.Scan()
+		}
 		//fmt.Println("------------------------------")
 		//fmt.Println("summsOfPayment", summsOfPayment)
 		//fmt.Println("HeadOfCheck", HeadOfCheck)
 		//fmt.Println("------------------------------")
-		//перенгоси суммы оплат из позиций, если сумма оплат была указана у позиций
+		//переносим суммы оплат из позиций, если сумма оплат была указана у позиций
 		for k, v := range summsOfPayment {
 			HeadOfCheck[k] = strconv.FormatFloat(v, 'f', -1, 64)
 		}
@@ -556,7 +737,7 @@ func main() {
 			if neededGetMarks {
 				logginInFile("будем получать/читать json с марками")
 				//fmt.Println(checkDescrInfo, "полчаем json для марки")
-				var receipt TReceipt
+				var receipt TReceiptOFD
 				var descrErr string
 				var err error
 				//receiptGetted := false
@@ -851,7 +1032,10 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 							logsmap[LOGERROR].Println(errDescr, line)
 							continue
 						}
+						//if OFD == "ofdru" {
+						//} else {
 						summsPayment[field] = summsPayment[field] + currSumm
+						//}
 					}
 				}
 			}
@@ -979,9 +1163,15 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	} else {
 		checkCorr.Electronically = true
 	}
-	checkCorr.CorrectionType = "self"
+	correctionType := "self"
+	correctionBaseNumber := ""
+	if *byPrescription {
+		correctionType = "instruction"
+		correctionBaseNumber = *docNumbOfPrescription
+	}
+	checkCorr.CorrectionType = correctionType
 	checkCorr.CorrectionBaseDate = headofcheck[COLDATE]
-	checkCorr.CorrectionBaseNumber = ""
+	checkCorr.CorrectionBaseNumber = correctionBaseNumber
 	checkCorr.ClientInfo.EmailOrPhone = headofcheck[EMAILFIELD]
 	checkCorr.Operator.Name = headofcheck[COLKASSIR]
 	checkCorr.Operator.Vatin = headofcheck[COLINNKASSIR]
@@ -1008,6 +1198,7 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		checkCorr.Payments = append(checkCorr.Payments, pay)
 	}
 	avance := headofcheck[COLAVANCE]
+	logsmap[LOGINFO].Println("avance", avance)
 	if notEmptyFloatField(avance) {
 		avancech, err := strconv.ParseFloat(avance, 64)
 		if err != nil {
@@ -1082,6 +1273,13 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			return checkCorr, descrErr, err
 		}
 		newPos.Amount = sch
+		if prch != 0 {
+			qchRight := math.Round(sch*1000/prch) / 1000
+			if qchRight != qch {
+				qch = qchRight
+				newPos.Quantity = qch
+			}
+		}
 		if qch == 0 {
 			if prch != 0 {
 				qchTemp := (sch * 1000 / prch)
@@ -1091,7 +1289,11 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			}
 			newPos.Quantity = qch
 		}
-		newPos.MeasurementUnit = "piece" //liter
+		measunit := "piece"
+		if math.Round(qch) != qch {
+			measunit = getMeasUnitFromStr(*measurementUnitOfFracQuantSimple)
+		}
+		newPos.MeasurementUnit = measunit //liter
 		newPos.PaymentMethod = getSposobRash(pos[COLSPOSOB])
 		//commodityWithMarking
 		newPos.PaymentObject = getPredmRasch(pos[COLPREDMET])
@@ -1110,9 +1312,9 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		}
 		//chanePredmetRascheta := false
 		if pos[COLMARK] != "" {
-			measunit := "piece"
+			measunit = "piece"
 			if qch != 1 {
-				measunit = "liter"
+				measunit = getMeasUnitFromStr(*measurementUnitOfFracQuantMark)
 				newPos.MeasurementUnit = measunit
 			}
 			currMark := pos[COLMARK]
@@ -1428,8 +1630,8 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 	return resVal
 }
 
-func fetchcheck(fd, fp, hyperlinkonjson string) (TReceipt, string, error) {
-	var receipt TReceipt
+func fetchcheck(fd, fp, hyperlinkonjson string) (TReceiptOFD, string, error) {
+	var receipt TReceiptOFD
 	var resp *http.Response
 	var err error
 	var body []byte
@@ -1481,7 +1683,7 @@ func fetchcheck(fd, fp, hyperlinkonjson string) (TReceipt, string, error) {
 func notEmptyFloatField(val string) bool {
 	res := true
 	if val == "" || val == "0.00" || val == "0.00 ₽" || val == "0,00 ₽" || val == "0,00" ||
-		val == "0,00 р" || val == "-" {
+		val == "0,00 р" || val == "-" || val == "0" {
 		res = false
 	}
 	return res
@@ -1626,4 +1828,32 @@ func getBoolFromString(val string, onErrorDefault bool) (bool, error) {
 		}
 	}
 	return res, err
+}
+
+func checkMistakeInPayments(amountcheck float64, payments map[string]float64) bool {
+	resmist := false
+	nal := payments[COLNAL]
+	bez := payments[COLBEZ]
+	ava := payments[COLAVANCE]
+	crd := payments[COLCREDIT]
+	vst := payments[COLVSTRECHPREDST]
+	allnotnalsumm := bez + ava + crd + vst
+	allsumms := allnotnalsumm + nal
+	if allsumms > amountcheck {
+		resmist = true
+	}
+	return resmist
+}
+
+func getMeasUnitFromStr(s string) string {
+	res := "kilogram"
+	switch s {
+	case "л":
+		res = "liter"
+	case "грамм":
+		res = "gram"
+	case "иная":
+		res = "otherUnits"
+	}
+	return res
 }
