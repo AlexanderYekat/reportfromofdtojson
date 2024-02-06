@@ -21,7 +21,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_02_05_03"
+const VERSION_OF_PROGRAM = "2024_02_06_02"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -1045,7 +1045,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 				res[currPos][field] = getfieldval(line, fieldsnums, field)
 			}
 		}
-		if OFD == "platforma" {
+		if (OFD == "platforma") || (OFD == "firstofd") {
 			//ищем марки в таблице марок
 			logginInFile("ищем марки в дполнительном файле платформы ОФД")
 			marka, err := findMarkInOtherFile(res[currPos][COLBINDPOSFIELDKASSA], res[currPos][COLBINDPOSFIELDCHECK],
@@ -1072,7 +1072,7 @@ func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int) (
 	logginInFile(logstr)
 	if fileofmarksexist, _ := doesFileExist(DIRINFILES + "checks_other.csv"); !fileofmarksexist {
 		//logginInFile("файл марок не существует")
-		return "", nil //если не существует, то просто не т марок
+		return "", nil //если не существует, то просто нет марок
 	}
 	f, err := os.Open(DIRINFILES + "checks_other.csv")
 	if err != nil {
@@ -1232,17 +1232,22 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		checkCorr.Payments = append(checkCorr.Payments, pay)
 	}
 	currFP := headofcheck[COLFP]
-	if currFP == "" {
-		currFP = headofcheck[COLFD]
-	}
-	//в тег 1192 - записываем ФП (если нет ФП, то записываем ФД)
-	if currFP != "" {
+	currFD := headofcheck[COLFD]
+	//if currFP == "" {
+	//	currFP = headofcheck[COLFD]
+	//}
+	//в тег 1192 - записываем ФП //(если нет ФП, то записываем ФД) - отменил
+	if (currFP != "") || (currFD != "") {
 		newAdditionalAttribute := TTag1192_91{Type: "additionalAttribute"}
-		newAdditionalAttribute.Value = currFP
+		if currFP != "" {
+			newAdditionalAttribute.Value = currFP
+		} else {
+			newAdditionalAttribute.Value = currFD
+		}
 		newAdditionalAttribute.Print = true
 		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
 	}
-	if headofcheck[COLFD] != "" {
+	if (currFD != "") && (currFP != "") {
 		newAdditionalAttribute := TTag1192_91{Type: "userAttribute"}
 		newAdditionalAttribute.Name = "ФД"
 		newAdditionalAttribute.Value = headofcheck[COLFD]
@@ -1521,8 +1526,11 @@ func getNumberOfFieldsInCSVloc(line []string, fieldsnames map[string]string, fie
 			posEndServiceWords := strings.Index(colname, "$")
 			colnamefinding = colname[posEndServiceWords+1:]
 		}
-		if (name == "bindheadfieldkassa") || (name == "bindheadfieldcheck") {
-			colnamefinding = fieldsnames[fieldsnames[name]]
+		if (name == "bindheadfieldkassa") || (name == "bindheadfieldcheck") || (name == "bindposposfieldcheck") {
+			_, ok := fieldsnames[name]
+			if ok {
+				colnamefinding = fieldsnames[fieldsnames[name]]
+			}
 		}
 		for i, val := range line {
 			valformated := formatfieldname(val)
@@ -1609,7 +1617,7 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 		//делаем анализ поля
 		switch OFD {
 		case "firstofd":
-			if name == "bindposfieldkassa" || name == "bindposfieldcheck" {
+			if name == "bindposfieldkassa" || name == "bindposfieldcheck" || name == "bindotherfieldcheck" {
 				reg, fn, fd, descrErr, err := getRegFnFdFromName(resVal)
 				if err != nil {
 					logsmap[LOGERROR].Println(descrErr)
@@ -1621,7 +1629,7 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 					if FieldsNames[COLBINDHEADFIELDKASSA] == "fnkkt" {
 						resVal = fn
 					}
-				} else if name == "bindposfieldcheck" {
+				} else if name == "bindposfieldcheck" || name == "bindotherfieldcheck" {
 					resVal = fd
 				}
 			}

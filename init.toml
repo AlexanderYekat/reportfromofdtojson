@@ -142,9 +142,15 @@ stavkaNDS10 = "#inv$Сумма НДС чека по ставке 10% (1103)"
 stavkaNDS20 = "#inv$Сумма НДС чека по ставке 20% (1102)"
 stavkaNDS110 = "#inv$Сумма НДС чека по расч. ставке 10/110 (1107)"
 stavkaNDS120 = "#inv$Сумма НДС чека по расч. ставке 20/120 (1106)"
-mark = "КТ GS1.М (1305)"
-bindposfieldkassa = "#analyse$Номер чека" #//0006989495006718_7280440500080718_5045
-bindposfieldcheck = "#analyse$Номер чека"
+#mark = "КТ GS1.М (1305)"
+bindposfieldkassa = "Регистрационный номер ККТ (1037)"
+bindposfieldcheck = "#analyse$Номер чека" #//0006989495006718_7280440500080718_5045
+bindposposfieldcheck = "name"
+#[fields.others]
+markother = "КТ GS1.М (1305)"
+bindotherfieldkassa = "Регистрационный номер ККТ (1037)"
+bindotherfieldcheck = "#analyse$Номер чека"
+bindotherposfieldcheck = "Наименование предмета расчета (1030)"
 
 [ofdru]
 #-colFNCh 1 -colRegCh 0 -colKassaNameCh -1 -colFDCh 15 -colFPCh -1 -col_kassir -1 -col_Inn_kassir -1 -colDate 16 -colTypeCheck -1 -colTypeOper -1 -colNal -1 -colBez -1 -colAvPay -1 -colCred -1 -colObm -1 -colSumNDS20 -1 -colName 0 -colQuant 5 -colPrice 4 -colAmountPos 6 -colSummPrepay -1 -colKassaNamePos 22 -colFDPos 32 -colPred 1 -colSpsRash 3 -colFPTovTabl 11 -col_kassirTov 28 -col_Inn_kassirTov -1 -colTypeCheckTov 2 -colNalTob 12 -colBezTov 13 -colAvPayTov 14 -colCredTov 15 -colObmTov 16 -colLinkOnCheck 30
