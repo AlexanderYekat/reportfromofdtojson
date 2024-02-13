@@ -21,7 +21,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_02_06_02"
+const VERSION_OF_PROGRAM = "2024_02_13_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -56,18 +56,19 @@ const COLAMOUNTPOS = "amountpos"
 const COLPREDMET = "predmet"
 const COLSPOSOB = "sposob"
 
-// const COLSTAVKANDS = "stavkaNDS"
-const COLSTAVKANDS0 = "stavkaNDS"
-const COLSTAVKANDS10 = "stavkaNDS"
-const COLSTAVKANDS20 = "stavkaNDS"
-const COLSTAVKANDS110 = "stavkaNDS"
-const COLSTAVKANDS120 = "stavkaNDS"
+const COLSTAVKANDS = "stavkaNDS"
+const COLSTAVKANDS0 = "stavkaNDS0"
+const COLSTAVKANDS10 = "stavkaNDS10"
+const COLSTAVKANDS20 = "stavkaNDS20"
+const COLSTAVKANDS110 = "stavkaNDS110"
+const COLSTAVKANDS120 = "stavkaNDS120"
 const COLMARK = "mark"
 const COLBINDPOSFIELDKASSA = "bindposfieldkassa"
 const COLBINDPOSFIELDCHECK = "bindposfieldcheck"
 const COLBINDPOSPOSFIELDCHECK = "bindposposfieldcheck"
 
 const COLMARKOTHER = "markother"
+const COLMARKOTHER2 = "markother2"
 const COLBINDOTHERKASSS = "bindotherfieldkassa"
 const COLBINDOTHERCHECK = "bindotherfieldcheck"
 const COLBINDOTHERPOS = "bindotherposfieldcheck"
@@ -1003,6 +1004,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 			if kassaname != "" || docnum != "" {
 				valbindkassainpos = kassaname
 				valbindcheckpos = docnum
+				continue
 			}
 		} else {
 			valbindkassainpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
@@ -1043,6 +1045,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 		for _, field := range AllFieldPositionsOfCheck {
 			if !isInvField(fieldsnames[field]) {
 				res[currPos][field] = getfieldval(line, fieldsnums, field)
+				//logsmap[LOGINFO_WITHSTD].Println(field)
 			}
 		}
 		if (OFD == "platforma") || (OFD == "firstofd") {
@@ -1102,6 +1105,19 @@ func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int) (
 		kassaother := getfieldval(line, fieldsnums, COLBINDOTHERKASSS)
 		docother := getfieldval(line, fieldsnums, COLBINDOTHERCHECK)
 		posnumother := getfieldval(line, fieldsnums, COLBINDOTHERPOS)
+
+		//logsmap[LOGINFO_WITHSTD].Println("kassa", kassa)
+		//logsmap[LOGINFO_WITHSTD].Println("doc", doc)
+		//logsmap[LOGINFO_WITHSTD].Println("posnum", posnum)
+		//logsmap[LOGINFO_WITHSTD].Println("kassaother", kassaother)
+		//logsmap[LOGINFO_WITHSTD].Println("docother", docother)
+		//logsmap[LOGINFO_WITHSTD].Println("posnumother", posnumother)
+
+		//logsmap[LOGINFO_WITHSTD].Println("kassa=kassaother", kassa == kassaother)
+		//logsmap[LOGINFO_WITHSTD].Println("doc=docother", doc == docother)
+		//logsmap[LOGINFO_WITHSTD].Println("posnum=posnumother", posnum == posnumother)
+
+		//logsmap[LOGINFO_WITHSTD].Println("(kassaother != kassa) || (docother != doc) || (posnumother != posnum)", (kassaother != kassa) || (docother != doc) || (posnumother != posnum))
 		//logstr = fmt.Sprintln("строка в файле марок:", "kassaother", kassaother, "docother", docother, "posnumother", posnumother)
 		//logginInFile(logstr)
 		if (kassaother != kassa) || (docother != doc) || (posnumother != posnum) {
@@ -1110,10 +1126,14 @@ func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int) (
 		}
 		//logginInFile("подходит строка")
 		marka = getfieldval(line, fieldsnums, COLMARKOTHER)
+		if marka == "" {
+			marka = getfieldval(line, fieldsnums, COLMARKOTHER2)
+		}
 		//logstr = fmt.Sprintln("марка", marka)
 		//logginInFile(logstr)
 		break
 	}
+	//logsmap[LOGINFO_WITHSTD].Println("marka", marka)
 	return marka, nil
 }
 
@@ -1303,18 +1323,24 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		//commodityWithMarking
 		newPos.PaymentObject = getPredmRasch(pos[COLPREDMET])
 		newPos.Tax = new(TTaxNDS)
-		newPos.Tax.Type = STAVKANDSNONE
+		stavkaNDSStr := STAVKANDSNONE
 		if pos[COLSTAVKANDS20] != "" {
-			newPos.Tax.Type = STAVKANDS20
+			stavkaNDSStr = STAVKANDS20
 		} else if pos[COLSTAVKANDS10] != "" {
-			newPos.Tax.Type = STAVKANDS10
+			stavkaNDSStr = STAVKANDS10
 		} else if pos[COLSTAVKANDS0] != "" {
-			newPos.Tax.Type = STAVKANDS0
+			stavkaNDSStr = STAVKANDS0
 		} else if pos[COLSTAVKANDS120] != "" {
-			newPos.Tax.Type = STAVKANDS120
+			stavkaNDSStr = STAVKANDS120
 		} else if pos[COLSTAVKANDS110] != "" {
-			newPos.Tax.Type = STAVKANDS110
+			stavkaNDSStr = STAVKANDS110
 		}
+		if pos[COLSTAVKANDS] != "" {
+			if pos[COLSTAVKANDS] != "НДС не облагается" {
+				logsmap[LOGERROR].Printf("требуется доработка программы для учёта ставки НДС %v в чеке", pos[COLSTAVKANDS])
+			}
+		}
+		newPos.Tax.Type = stavkaNDSStr
 		//chanePredmetRascheta := false
 		if pos[COLMARK] != "" {
 			measunit = "piece"
@@ -1596,6 +1622,8 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 	if strings.Contains(name, "stavkaNDS") {
 		if notEmptyFloatField(resVal) {
 			switch name {
+			case "stavkaNDS":
+				resVal = resVal
 			case "stavkaNDS0":
 				resVal = STAVKANDS0
 			case "stavkaNDS10":
