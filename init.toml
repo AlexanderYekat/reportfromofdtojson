@@ -144,13 +144,15 @@ stavkaNDS20 = "#inv$Сумма НДС чека по ставке 20% (1102)"
 stavkaNDS110 = "#inv$Сумма НДС чека по расч. ставке 10/110 (1107)"
 stavkaNDS120 = "#inv$Сумма НДС чека по расч. ставке 20/120 (1106)"
 #mark = "КТ GS1.М (1305)"
-bindposfieldkassa = "Регистрационный номер ККТ (1037)"
+#bindposfieldkassa = "Регистрационный номер ККТ (1037)"
+bindposfieldkassa = "#analyse$Номер чека"
 bindposfieldcheck = "#analyse$Номер чека" #//0006989495006718_7280440500080718_5045
 bindposposfieldcheck = "name"
 #[fields.others]
 markother = "КТ GS1.М (1305)"
 markother2 = "КТ КМК (1306)"
-bindotherfieldkassa = "Регистрационный номер ККТ (1037)"
+#bindotherfieldkassa = "Регистрационный номер ККТ (1037)"
+bindotherfieldkassa = "#analyse$Номер чека"
 bindotherfieldcheck = "#analyse$Номер чека"
 bindotherposfieldcheck = "Наименование предмета расчета (1030)"
 

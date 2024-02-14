@@ -21,7 +21,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_02_13_01"
+const VERSION_OF_PROGRAM = "2024_02_14_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -969,6 +969,9 @@ func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[
 func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames map[string]string, fieldsnums map[string]int) (map[int]map[string]string, map[string]float64) {
 	//fmt.Println("valbindkassainhead", valbindkassainhead)
 	//fmt.Println("valbindcheckinhead", valbindcheckinhead)
+	//logsmap[LOGINFO].Println("*****************************************************")
+	//logsmap[LOGINFO].Println("valbindkassainhead", valbindkassainhead)
+	//logsmap[LOGINFO].Println("valbindcheckinhead", valbindcheckinhead)
 	res := make(map[int]map[string]string)
 	summsPayment := make(map[string]float64)
 	f, err := os.Open(DIRINFILES + "checks_poss.csv")
@@ -1010,6 +1013,8 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 			valbindkassainpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
 			valbindcheckpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
 		}
+		logsmap[LOGINFO].Println("valbindkassainpos", valbindkassainpos)
+		//logsmap[LOGINFO].Println("valbindcheckpos", valbindcheckpos)
 		if (valbindkassainhead != valbindkassainpos) || (valbindcheckinhead != valbindcheckpos) {
 			continue
 		}
@@ -1645,14 +1650,14 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 		//делаем анализ поля
 		switch OFD {
 		case "firstofd":
-			if name == "bindposfieldkassa" || name == "bindposfieldcheck" || name == "bindotherfieldcheck" {
+			if name == "bindposfieldkassa" || name == "bindposfieldcheck" || name == "bindotherfieldcheck" || name == "bindotherfieldkassa" {
 				reg, fn, fd, descrErr, err := getRegFnFdFromName(resVal)
 				if err != nil {
 					logsmap[LOGERROR].Println(descrErr)
 					erroFatal := fmt.Sprintf("ошбка: %v. Не удалось получить регистрационный номер, номер ФД, ФН из имени кассы %v", err, resVal)
 					log.Fatal(erroFatal)
 				}
-				if name == "bindposfieldkassa" {
+				if name == "bindposfieldkassa" || name == "bindotherfieldkassa" {
 					resVal = reg
 					if FieldsNames[COLBINDHEADFIELDKASSA] == "fnkkt" {
 						resVal = fn
