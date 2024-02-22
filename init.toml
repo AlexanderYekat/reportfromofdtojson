@@ -18,6 +18,10 @@ descr = "СБИС"
 num = 5
 name = "platforma"
 descr = "Платформа ОФД"
+[[template.ofd]]
+num = 6
+name = "astral"
+descr = "ОФД Астрал"
 
 [fields.kkt]
 inn = "инн фирмы"
@@ -72,7 +76,6 @@ markother2 = "ещё столбец марок"
 bindotherfieldkassa = "поле для связывания по кассе в таблице позций"
 bindotherfieldcheck = "поле для связывания по чеку в таблице позций"
 bindotherposfieldcheck = "поле для связывания по позициям в таблице позиций"
-
 
 [conturofd]
 #-colFNCh 0 -colKassaNameCh 1 -colFDCh 2 -colFPCh 3 -col_kassir 4 -colDate 5 -colTypeCheck 6 -colTypeOper 7 -colNal 8 -colBez 9 -colAvPay 10 -colCred 11 -colObm 12 -colSumNDS20 13
@@ -284,3 +287,30 @@ markother = "Код маркировки"
 bindotherfieldkassa = "РНМ"
 bindotherfieldcheck = "Номер ФД"
 bindotherposfieldcheck = "Позиция в чеке"
+
+[astral]
+#inn = "инн фирмы"
+regnumkkt = "РНМ"
+#zavnumkkt = "заводской номер ККТ"
+fnkkt = "ФН"
+#nameofkkt = "имя ККТ в ОФД"
+#[fields.check]
+#numSm = "номер смены"
+fd = "Номер чека"
+fp = "ФП документа"
+amountCheck = "Итого"
+#nal = "сумма наличными"
+#bez = "сумма безналичными"
+#credit = "сумма в расрочку"
+#avance = "сумма зачета апанса"
+#vstrechpredst = "сумма встречным представлением"
+kassir = "Кассир"
+#innkassir = "инн кассира"
+date = "Дата печати ФД"
+time = "Время печати ФД"
+osn = "СНО"
+tag1054 = "Тип операции"
+typeCheck = "Тип документа"
+#link = "ссылка чека"
+bindheadfieldkassa = "fnkkt"
+bindheadfieldcheck = "Номер чека"
