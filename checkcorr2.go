@@ -17,11 +17,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_02_14_01"
+const VERSION_OF_PROGRAM = "2024_02_22_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -102,6 +103,7 @@ const JSONRES = "./json/"
 const DIRINFILES = "./infiles/"
 const DIRINFILESANDUNION = "./infiles/union/"
 const DIROFREQUEST = "./request/"
+const DIROFREQUESTASTRAL = "./request/astral/"
 
 type TClientInfo struct {
 	EmailOrPhone string `json:"emailOrPhone"`
@@ -484,7 +486,7 @@ func main() {
 	}
 	//fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_header.csv", "head")
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_poss.csv", "positions")
-	if err != nil {
+	if (err != nil) && (OFD != "astral") {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_poss.csv) входных данных (позиции чека)", err)
 		logsmap[LOGERROR].Println(descrError)
 		fmt.Println("Нажмите любую клавишу...")
@@ -493,7 +495,7 @@ func main() {
 		log.Panic(descrError)
 	}
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_other.csv", "other")
-	if err != nil {
+	if (err != nil) && (OFD != "astral") {
 		logstr := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_other.csv) входных данных (прочие данные чека(например марик))", err)
 		logginInFile(logstr)
 	}
@@ -507,6 +509,8 @@ func main() {
 	logsmap[LOGINFO_WITHSTD].Printf("перебор %v чеков", countAllChecks)
 	currLine := 0
 	for _, line := range lines {
+		var summsOfPayment map[string]float64
+		var findedPositions map[int]map[string]string
 		currLine++
 		if currLine == 1 {
 			continue //пропускаем настройку названий столбцов
@@ -521,8 +525,8 @@ func main() {
 			//FieldsNames[COLTYPECHECK]
 			if !isInvField(FieldsNames[field]) {
 				HeadOfCheck[field] = getfieldval(line, FieldsNums, field)
-				strloggin := fmt.Sprintf("заполнение поля %v значением %v\n", field, HeadOfCheck[field])
-				logginInFile(strloggin)
+				//strloggin := fmt.Sprintf("заполнение поля %v значением %v\n", field, HeadOfCheck[field])
+				//logginInFile(strloggin)
 			}
 		}
 		//заполняем поля шапки с префиксом inv - те эти поля будут - это значения полей позиций
@@ -547,9 +551,31 @@ func main() {
 		valbindcheck := HeadOfCheck[COLBINDHEADDIELDCHECK]
 		//ищем позиции в файле позиций чека, которые бы соответсвовали бы текущеё строке чека //по номеру ФН и названию кассы
 		checkDescrInfo := fmt.Sprintf("(ФД %v (ФП %v) от %v)", HeadOfCheck[COLFD], HeadOfCheck[COLFP], HeadOfCheck[COLDATE])
-		descrInfo = fmt.Sprintf("для чека %v ищем позиции", checkDescrInfo)
-		logginInFile(descrInfo)
-		findedPositions, summsOfPayment := findPositions(valbindkassa, valbindcheck, FieldsNames, FieldsNums)
+		if OFD != "astral" {
+			descrInfo = fmt.Sprintf("для чека %v ищем позиции", checkDescrInfo)
+			logginInFile(descrInfo)
+			findedPositions, summsOfPayment = findPositions(valbindkassa, valbindcheck, FieldsNames, FieldsNums)
+		} else {
+			//findedPositions, summsOfPayment = fillpossitonsbyref(HeadOfCheck, FieldsNames, FieldsNums)
+			descrInfo = fmt.Sprintf("для чека %v получаем позиции get запросом", checkDescrInfo)
+			logginInFile(descrInfo)
+			//findedPositions, summsOfPayment, err = fillpossitonsbyrefastral(HeadOfCheck[COLFD], HeadOfCheck[COLFP], HeadOfCheck[COLFNKKT])
+			_, _, err = fillpossitonsbyrefastral(HeadOfCheck[COLFD], HeadOfCheck[COLFP], HeadOfCheck[COLFNKKT])
+			if err != nil {
+				logerrordescr := fmt.Sprintf("ошибка1 (%v) получение данных позиций для чека %v", err, checkDescrInfo)
+				logsmap[LOGERROR].Println(logerrordescr)
+				_, _, err = fillpossitonsbyrefastral(HeadOfCheck[COLFD], HeadOfCheck[COLFP], HeadOfCheck[COLFNKKT])
+			}
+			if err != nil {
+				logerrordescr := fmt.Sprintf("ошибка2 (%v) получение данных позиций для чека %v", err, checkDescrInfo)
+				logsmap[LOGERROR].Println(logerrordescr)
+				log.Panic(logerrordescr)
+				//continue
+			}
+			//fmt.Println(findedPositions)
+			//fmt.Println(summsOfPayment)
+			continue
+		}
 		//fmt.Println("------------------------------")
 		//fmt.Println("HeadOfCheck", HeadOfCheck)
 		//fmt.Println("------------------------------")
@@ -1013,7 +1039,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 			valbindkassainpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
 			valbindcheckpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
 		}
-		logsmap[LOGINFO].Println("valbindkassainpos", valbindkassainpos)
+		//logsmap[LOGINFO].Println("valbindkassainpos", valbindkassainpos)
 		//logsmap[LOGINFO].Println("valbindcheckpos", valbindcheckpos)
 		if (valbindkassainhead != valbindkassainpos) || (valbindcheckinhead != valbindcheckpos) {
 			continue
@@ -1072,6 +1098,43 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 	} //перебор всех строк в файле позиций чека
 	return res, summsPayment
 } //findPositions
+
+// func fillpossitonsbyref(headofcheck, fieldsnames map[string]string, fieldsnums map[string]int) (map[int]map[string]string, map[string]float64) {
+func fillpossitonsbyrefastral(fd, fp, fn string) (map[int]map[string]string, map[string]float64, error) {
+	var resp *http.Response
+	var err error
+	var body []byte
+	res := make(map[int]map[string]string)
+	summsPayment := make(map[string]float64)
+	//https://ofd.astralnalog.ru/api/v4.2/landing.pdfNew?fiscalSign=<Фискальный признак>&fiscalDocumentNumber=<Номер документа>&fiscalDriveNumber=<Номер ФН>
+	hyperlinkonjson := fmt.Sprintf("https://ofd.astralnalog.ru/api/v4.2/landing.pdfNew?fiscalSign=%v&fiscalDocumentNumber=%v&fiscalDriveNumber=%v", fp, fd, fn)
+	nameoffile := fd + "_" + fp + ".pdf"
+	fullFileName := DIROFREQUESTASTRAL + nameoffile
+	if !alredyGettedFetchAstral(fullFileName) {
+		logginInFile("перед get запросом делаем паузу...")
+		duration := time.Millisecond * 10
+		time.Sleep(duration)
+		strlog := fmt.Sprintf("получение данных о чеке по ссылке %v", hyperlinkonjson)
+		logginInFile(strlog)
+		resp, err = http.Get(hyperlinkonjson)
+		if err != nil {
+			errDescr := fmt.Sprintf("ошибка(не удалось получить ответ от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
+			logsmap[LOGERROR].Println(errDescr)
+			return res, summsPayment, err
+		}
+		defer resp.Body.Close()
+		body, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			errDescr := fmt.Sprintf("ошибка(прочитать данные от сервера ОФД): %v. Не удалось получить данные о чеке по ссылке %v", err, hyperlinkonjson)
+			logsmap[LOGERROR].Println(errDescr)
+			return res, summsPayment, err
+		}
+		ioutil.WriteFile(fullFileName, body, 0644)
+	} else {
+		logginInFile(fmt.Sprintf("запрос %v был уже выполнен ранее", hyperlinkonjson))
+	}
+	return res, summsPayment, err
+}
 
 func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int) (string, error) {
 	var marka string
@@ -1537,6 +1600,8 @@ func formatMyNumber(num string) string {
 	res = strings.ReplaceAll(res, " ", "")
 	res = strings.ReplaceAll(res, " ₽", "")
 	res = strings.ReplaceAll(res, " р", "")
+	res = strings.ReplaceAll(res, "₽", "")
+	res = strings.ReplaceAll(res, "р", "")
 	return res
 }
 
@@ -1626,21 +1691,23 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 	}
 	if strings.Contains(name, "stavkaNDS") {
 		if notEmptyFloatField(resVal) {
-			switch name {
-			case "stavkaNDS":
-				resVal = resVal
-			case "stavkaNDS0":
-				resVal = STAVKANDS0
-			case "stavkaNDS10":
-				resVal = STAVKANDS10
-			case "stavkaNDS20":
-				resVal = STAVKANDS20
-			case "stavkaNDS110":
-				resVal = STAVKANDS110
-			case "stavkaNDS120":
-				resVal = STAVKANDS120
-			default:
-				resVal = STAVKANDSNONE
+			if name != "stavkaNDS" {
+				switch name {
+				//case "stavkaNDS":
+				//	resVal = resVal
+				case "stavkaNDS0":
+					resVal = STAVKANDS0
+				case "stavkaNDS10":
+					resVal = STAVKANDS10
+				case "stavkaNDS20":
+					resVal = STAVKANDS20
+				case "stavkaNDS110":
+					resVal = STAVKANDS110
+				case "stavkaNDS120":
+					resVal = STAVKANDS120
+				default:
+					resVal = STAVKANDSNONE
+				}
 			}
 		} else {
 			resVal = ""
@@ -1804,6 +1871,14 @@ func alredyGettedFetch(fd, fp string) bool {
 	res := true
 	nameoffile := fd + "_" + fp + ".resp"
 	fullname := DIROFREQUEST + nameoffile
+	if foundedRespFile, _ := doesFileExist(fullname); !foundedRespFile {
+		res = false
+	}
+	return res
+}
+
+func alredyGettedFetchAstral(fullname string) bool {
+	res := true
 	if foundedRespFile, _ := doesFileExist(fullname); !foundedRespFile {
 		res = false
 	}
