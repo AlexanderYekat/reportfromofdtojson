@@ -20,8 +20,12 @@ name = "platforma"
 descr = "Платформа ОФД"
 [[template.ofd]]
 num = 6
-name = "astral"
-descr = "ОФД Астрал"
+name = "astral_link"
+descr = "ОФД Астрал - получение только ссылок"
+[[template.ofd]]
+num = 7
+name = "astral_json"
+descr = "ОФД Астра - формирования jsons"
 
 [fields.kkt]
 inn = "инн фирмы"
@@ -288,7 +292,7 @@ bindotherfieldkassa = "РНМ"
 bindotherfieldcheck = "Номер ФД"
 bindotherposfieldcheck = "Позиция в чеке"
 
-[astral]
+[astral_link]
 #inn = "инн фирмы"
 regnumkkt = "РНМ"
 #zavnumkkt = "заводской номер ККТ"
@@ -314,3 +318,26 @@ typeCheck = "Тип документа"
 #link = "ссылка чека"
 bindheadfieldkassa = "fnkkt"
 bindheadfieldcheck = "Номер чека"
+
+[astral_json]
+#[fields.check]
+fd = "fd"
+fp = "fp"
+amountCheck = "summ"
+nal = "nal"
+bez = "beznal"
+kassir = "kassir"
+tag1054 = "type"
+#bindheadfieldkassa = "поле для связвание по кассе в таблице шапки"
+bindheadfieldcheck = "fd"
+#[fields.positions]
+name = "name"
+quantity = "quant"
+price = "price"
+#amountpos = "сумма товара"
+#predmet = "ppr"
+#sposob = "psr"
+mark = "mark"
+#bindposfieldkassa = "поле для связывания по кассе в таблице позций"
+bindposfieldcheck = "fd"
+#bindposposfieldcheck = "поле для связывания по позициям в доплнительной таблице"

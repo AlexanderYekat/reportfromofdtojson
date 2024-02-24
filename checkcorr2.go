@@ -35,6 +35,7 @@ const COLNAMEOFKKT = "nameofkkt"
 
 const COLFD = "fd"
 const COLFP = "fp"
+const COLAMOUNTCHECK = "amountCheck"
 const COLNAL = "nal"
 const COLBEZ = "bez"
 const COLCREDIT = "credit"
@@ -481,12 +482,13 @@ func main() {
 		log.Panic(descrError)
 	}
 	//инициализация номеров колонок
+	//fmt.Printf("dd=%v\n", lines)
 	if len(lines) > 0 {
 		FieldsNums = getNumberOfFieldsInCSV(lines[0], FieldsNames, FieldsNums, "head")
 	}
 	//fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_header.csv", "head")
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_poss.csv", "positions")
-	if (err != nil) && (OFD != "astral") {
+	if (err != nil) && (OFD != "astral_link") {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_poss.csv) входных данных (позиции чека)", err)
 		logsmap[LOGERROR].Println(descrError)
 		fmt.Println("Нажмите любую клавишу...")
@@ -495,7 +497,7 @@ func main() {
 		log.Panic(descrError)
 	}
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_other.csv", "other")
-	if (err != nil) && (OFD != "astral") {
+	if (err != nil) && (OFD != "astral_link") {
 		logstr := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_other.csv) входных данных (прочие данные чека(например марик))", err)
 		logginInFile(logstr)
 	}
@@ -522,6 +524,7 @@ func main() {
 		//заполняема поля шапки
 		HeadOfCheck := make(map[string]string)
 		for _, field := range AllFieldsHeadOfCheck {
+			//println(FieldsNames[field])
 			//FieldsNames[COLTYPECHECK]
 			if !isInvField(FieldsNames[field]) {
 				HeadOfCheck[field] = getfieldval(line, FieldsNums, field)
@@ -535,7 +538,7 @@ func main() {
 				HeadOfCheck["inv$"+field] = getfieldval(line, FieldsNums, field)
 			}
 		}
-		if HeadOfCheck[COLBINDHEADFIELDKASSA] == "" {
+		if (HeadOfCheck[COLBINDHEADFIELDKASSA] == "") && (OFD != "astral_json") {
 			logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не опредлена касса", line)
 			continue
 		}
@@ -551,7 +554,7 @@ func main() {
 		valbindcheck := HeadOfCheck[COLBINDHEADDIELDCHECK]
 		//ищем позиции в файле позиций чека, которые бы соответсвовали бы текущеё строке чека //по номеру ФН и названию кассы
 		checkDescrInfo := fmt.Sprintf("(ФД %v (ФП %v) от %v)", HeadOfCheck[COLFD], HeadOfCheck[COLFP], HeadOfCheck[COLDATE])
-		if OFD != "astral" {
+		if OFD != "astral_link" {
 			descrInfo = fmt.Sprintf("для чека %v ищем позиции", checkDescrInfo)
 			logginInFile(descrInfo)
 			findedPositions, summsOfPayment = findPositions(valbindkassa, valbindcheck, FieldsNames, FieldsNums)
@@ -605,8 +608,20 @@ func main() {
 		}
 		amountOfCheck := 0.0
 		for _, pos := range findedPositions {
-			spos, err := strconv.ParseFloat(pos[COLAMOUNTPOS], 64)
-			if err != nil {
+			spos, errgen := strconv.ParseFloat(pos[COLAMOUNTPOS], 64)
+			if errgen != nil {
+				prloc, errlocpr := strconv.ParseFloat(pos[COLPRICE], 64)
+				quloc, errlocqt := strconv.ParseFloat(pos[COLQUANTITY], 64)
+				if (errlocpr != nil) || (errlocqt != nil) {
+					descrErr := fmt.Sprintf("ошибка (%v, %v) парсинга строки (%v, %v) суммы для чека %v", errlocpr, errlocqt, pos[COLPRICE], pos[COLQUANTITY], checkDescrInfo)
+					logsmap[LOGERROR].Println(descrErr)
+				} else {
+					spos = prloc * quloc
+					errgen = nil
+					pos[COLAMOUNTPOS] = fmt.Sprint(spos)
+				}
+			}
+			if errgen != nil {
 				descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы для чека %v", err, pos[COLAMOUNTPOS], checkDescrInfo)
 				logsmap[LOGERROR].Println(descrErr)
 				continue
@@ -614,6 +629,20 @@ func main() {
 			amountOfCheck += spos
 		}
 		mistakesInPayment := false
+		if OFD == "astral_json" {
+			amountOfCheckinHead, errparseam := strconv.ParseFloat(HeadOfCheck[COLAMOUNTCHECK], 64)
+			if errparseam != nil {
+				descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы для всего чека %v", errparseam, HeadOfCheck[COLAMOUNTCHECK], checkDescrInfo)
+				logsmap[LOGERROR].Println(descrErr)
+				continue
+			}
+			if amountOfCheckinHead != amountOfCheck {
+				//mistakesInPayment = checkMistakeInPayments(amountOfCheck, summsOfPayment)
+				descrErr := fmt.Sprintf("ошибка: сумма итого по чеку %v не совпадает с суммой %v по позициям для чека %v", amountOfCheckinHead, amountOfCheck, checkDescrInfo)
+				logsmap[LOGERROR].Println(descrErr)
+				continue
+			}
+		}
 		if OFD == "ofdru" {
 			mistakesInPayment = checkMistakeInPayments(amountOfCheck, summsOfPayment)
 			if mistakesInPayment {
@@ -1213,7 +1242,7 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	if typeCheck == "приход" {
 		chekcCorrTypeLoc = "sellCorrection"
 	}
-	if typeCheck == "возврат прихода" {
+	if (typeCheck == "возврат прихода") || (typeCheck == "возврат") {
 		chekcCorrTypeLoc = "sellReturnCorrection"
 	}
 	if typeCheck == "расход" {
@@ -1286,7 +1315,7 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		checkCorr.Payments = append(checkCorr.Payments, pay)
 	}
 	avance := headofcheck[COLAVANCE]
-	logsmap[LOGINFO].Println("avance", avance)
+	//logsmap[LOGINFO].Println("avance", avance)
 	if notEmptyFloatField(avance) {
 		avancech, err := strconv.ParseFloat(avance, 64)
 		if err != nil {
