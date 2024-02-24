@@ -26,6 +26,11 @@ descr = "ОФД Астрал - получение только ссылок"
 num = 7
 name = "astral_json"
 descr = "ОФД Астра - формирования jsons"
+[[template.ofd]]
+num = 8
+name = "astral_union"
+descr = "ОФД Астра - из объеденённой таблицы"
+
 
 [fields.kkt]
 inn = "инн фирмы"
@@ -342,3 +347,18 @@ mark = "mark"
 #bindposfieldkassa = "поле для связывания по кассе в таблице позций"
 bindposfieldcheck = "fd"
 #bindposposfieldcheck = "поле для связывания по позициям в доплнительной таблице"
+
+[astral_union]
+fd = "fd"
+fp = "fp"
+amountCheck = "summ"
+nal = "nal"
+bez = "beznal"
+kassir = "kassir"
+date = "date"
+tag1054 = "type"
+#[fields.positions]
+name = "name"
+quantity = "quant"
+price = "price"
+mark = "mark"

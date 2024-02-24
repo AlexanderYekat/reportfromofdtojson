@@ -22,7 +22,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_02_22_01"
+const VERSION_OF_PROGRAM = "2024_02_24_03"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -275,6 +275,7 @@ var measurementUnitOfFracQuantMark = flag.String("fracquantunitmark", "кг", "�
 var FieldsNums map[string]int
 var FieldsNames map[string]string
 var OFD string
+var AllFieldsUnionOfCheck []string
 var AllFieldsHeadOfCheck []string
 var AllFieldPositionsOfCheck []string
 var AllFieldOtherOfCheck []string
@@ -437,18 +438,21 @@ func main() {
 	FieldsNames = make(map[string]string)
 	for k, v := range data[OFD].(map[string]interface{}) {
 		FieldsNames[k] = fmt.Sprint(v)
+		AllFieldsUnionOfCheck = append(AllFieldsUnionOfCheck, k)
 	}
-	for k := range data["fields"].(map[string]interface{})["kkt"].(map[string]interface{}) {
-		AllFieldsHeadOfCheck = append(AllFieldsHeadOfCheck, k)
-	}
-	for k := range data["fields"].(map[string]interface{})["check"].(map[string]interface{}) {
-		AllFieldsHeadOfCheck = append(AllFieldsHeadOfCheck, k)
-	}
-	for k := range data["fields"].(map[string]interface{})["positions"].(map[string]interface{}) {
-		AllFieldPositionsOfCheck = append(AllFieldPositionsOfCheck, k)
-	}
-	for k := range data["fields"].(map[string]interface{})["others"].(map[string]interface{}) {
-		AllFieldOtherOfCheck = append(AllFieldOtherOfCheck, k)
+	if OFD != "astral_union" {
+		for k := range data["fields"].(map[string]interface{})["kkt"].(map[string]interface{}) {
+			AllFieldsHeadOfCheck = append(AllFieldsHeadOfCheck, k)
+		}
+		for k := range data["fields"].(map[string]interface{})["check"].(map[string]interface{}) {
+			AllFieldsHeadOfCheck = append(AllFieldsHeadOfCheck, k)
+		}
+		for k := range data["fields"].(map[string]interface{})["positions"].(map[string]interface{}) {
+			AllFieldPositionsOfCheck = append(AllFieldPositionsOfCheck, k)
+		}
+		for k := range data["fields"].(map[string]interface{})["others"].(map[string]interface{}) {
+			AllFieldOtherOfCheck = append(AllFieldOtherOfCheck, k)
+		}
 	}
 	//инициализация директории результатов
 	if foundedLogDir, _ := doesFileExist(JSONRES); !foundedLogDir {
@@ -457,9 +461,13 @@ func main() {
 	logsmap[LOGINFO_WITHSTD].Println("формирование json заданий начато")
 	//инициализация входных данных
 	logginInFile("открытие файла списка чеков")
-	f, err := os.Open(DIRINFILES + "checks_header.csv")
+	fileofheadername := "checks_header"
+	if OFD == "astral_union" {
+		fileofheadername = "union"
+	}
+	f, err := os.Open(DIRINFILES + fileofheadername + ".csv")
 	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (checks_header.csv) входных данных (шапки чека)", err)
+		descrError := fmt.Sprintf("не удлаось (%v) открыть файл (%v.csv) входных данных (шапки чека)", err, fileofheadername)
 		logsmap[LOGERROR].Println(descrError)
 		fmt.Println("Нажмите любую клавишу...")
 		input := bufio.NewScanner(os.Stdin)
@@ -474,7 +482,7 @@ func main() {
 	logginInFile("чтение списка чеков")
 	lines, err := csv_red.ReadAll()
 	if err != nil {
-		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_header.csv) входных данных (шапки чека)", err)
+		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (%v.csv) входных данных (шапки чека)", err, fileofheadername)
 		logsmap[LOGERROR].Println(descrError)
 		fmt.Println("Нажмите любую клавишу...")
 		input := bufio.NewScanner(os.Stdin)
@@ -484,11 +492,15 @@ func main() {
 	//инициализация номеров колонок
 	//fmt.Printf("dd=%v\n", lines)
 	if len(lines) > 0 {
-		FieldsNums = getNumberOfFieldsInCSV(lines[0], FieldsNames, FieldsNums, "head")
+		typetanletemp := "head"
+		if OFD == "astral_union" {
+			typetanletemp = "union"
+		}
+		FieldsNums = getNumberOfFieldsInCSV(lines[0], FieldsNames, FieldsNums, typetanletemp)
 	}
 	//fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_header.csv", "head")
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_poss.csv", "positions")
-	if (err != nil) && (OFD != "astral_link") {
+	if (err != nil) && (OFD != "astral_link") && (OFD != "astral_union") {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_poss.csv) входных данных (позиции чека)", err)
 		logsmap[LOGERROR].Println(descrError)
 		fmt.Println("Нажмите любую клавишу...")
@@ -497,7 +509,7 @@ func main() {
 		log.Panic(descrError)
 	}
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_other.csv", "other")
-	if (err != nil) && (OFD != "astral_link") {
+	if (err != nil) && (OFD != "astral_link") && (OFD != "astral_union") {
 		logstr := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_other.csv) входных данных (прочие данные чека(например марик))", err)
 		logginInFile(logstr)
 	}
@@ -510,19 +522,108 @@ func main() {
 	countAllChecks := len(lines) - 1
 	logsmap[LOGINFO_WITHSTD].Printf("перебор %v чеков", countAllChecks)
 	currLine := 0
+
+	currNumbPos := 0
+	PrevAllFieldsOfCheck := make(map[string]string)
+	resultFindedPositions := make(map[int]map[string]string)
+	if OFD == "astral_union" {
+		lines = append(lines, []string{""})
+	}
 	for _, line := range lines {
 		var summsOfPayment map[string]float64
 		var findedPositions map[int]map[string]string
+		fictivnaystr := false
+		currNewCheck := false
 		currLine++
 		if currLine == 1 {
 			continue //пропускаем настройку названий столбцов
 		}
+		if currLine == 2 {
+			currNewCheck = true
+		}
+		if OFD == "astral_union" {
+			if currLine == len(lines) {
+				fictivnaystr = true
+			}
+		}
+		CurrAllFieldsOfCheck := make(map[string]string)
+		//for k := range CurrAllFieldsOfCheck {
+		//	delete(CurrAllFieldsOfCheck, k)
+		//}
 		descrInfo := fmt.Sprintf("обработка строки %v из %v", currLine-1, countAllChecks)
 		logginInFile(descrInfo)
 		strlog := fmt.Sprintln(line)
 		logginInFile(strlog)
 		//заполняема поля шапки
 		HeadOfCheck := make(map[string]string)
+		HeadOfCheck[EMAILFIELD] = *email
+		HeadOfCheck[NOPRINTFIELD] = fmt.Sprint(!*printonpaper)
+		if OFD == "astral_union" {
+			needGererationJson := false
+			if !fictivnaystr {
+				for _, field := range AllFieldsUnionOfCheck {
+					CurrAllFieldsOfCheck[field] = getfieldval(line, FieldsNums, field)
+				}
+				if CurrAllFieldsOfCheck[COLFD] != PrevAllFieldsOfCheck[COLFD] {
+					currNewCheck = true
+				} else {
+					currNumbPos++
+				}
+			} else {
+				currNewCheck = true
+			}
+			if currNewCheck {
+				if len(resultFindedPositions) > 0 {
+					HeadOfCheck[COLFD] = PrevAllFieldsOfCheck[COLFD]
+					HeadOfCheck[COLFP] = PrevAllFieldsOfCheck[COLFP]
+					HeadOfCheck[COLDATE] = PrevAllFieldsOfCheck[COLDATE]
+					HeadOfCheck[COLTAG1054] = PrevAllFieldsOfCheck[COLTAG1054]
+					HeadOfCheck[COLKASSIR] = PrevAllFieldsOfCheck[COLKASSIR]
+					HeadOfCheck[COLAMOUNTCHECK] = PrevAllFieldsOfCheck[COLAMOUNTCHECK]
+					HeadOfCheck[COLNAL] = PrevAllFieldsOfCheck[COLNAL]
+					HeadOfCheck[COLBEZ] = PrevAllFieldsOfCheck[COLBEZ]
+					//for k := range findedPositions {
+					//	for v := range findedPositions[k] {
+					//		delete(findedPositions[k], v)
+					//	}
+					//	delete(findedPositions, k)
+					//}
+					//logsmap[LOGINFO].Println("resultFindedPositions=", resultFindedPositions)
+					findedPositions = make(map[int]map[string]string)
+					for k, v := range resultFindedPositions {
+						findedPositions[k] = make(map[string]string)
+						for kk, vv := range v {
+							findedPositions[k][kk] = vv
+						}
+					}
+					needGererationJson = true
+				}
+				currNumbPos = 1
+				for k := range resultFindedPositions {
+					for v := range resultFindedPositions[k] {
+						delete(resultFindedPositions[k], v)
+					}
+					delete(resultFindedPositions, k)
+				}
+			}
+			//logsmap[LOGINFO].Println("resultFindedPositions0", resultFindedPositions)
+			resultFindedPositions[currNumbPos] = make(map[string]string)
+			for k, v := range CurrAllFieldsOfCheck {
+				//logsmap[LOGINFO].Println("k", k, "v", v)
+				resultFindedPositions[currNumbPos][k] = v
+			}
+			//logsmap[LOGINFO].Println("resultFindedPositions1", resultFindedPositions)
+			//findedPositions[currNumbPos] = AllFieldsOfCheck
+			for k := range PrevAllFieldsOfCheck {
+				delete(PrevAllFieldsOfCheck, k)
+			}
+			for k := range CurrAllFieldsOfCheck {
+				PrevAllFieldsOfCheck[k] = CurrAllFieldsOfCheck[k]
+			}
+			if !needGererationJson {
+				continue
+			}
+		}
 		for _, field := range AllFieldsHeadOfCheck {
 			//println(FieldsNames[field])
 			//FieldsNames[COLTYPECHECK]
@@ -538,7 +639,7 @@ func main() {
 				HeadOfCheck["inv$"+field] = getfieldval(line, FieldsNums, field)
 			}
 		}
-		if (HeadOfCheck[COLBINDHEADFIELDKASSA] == "") && (OFD != "astral_json") {
+		if (HeadOfCheck[COLBINDHEADFIELDKASSA] == "") && (OFD != "astral_json") && (OFD != "astral_union") {
 			logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не опредлена касса", line)
 			continue
 		}
@@ -548,17 +649,15 @@ func main() {
 			logginInFile("пропускаем строку, так как она является отчетом о закрытии или открытии смены")
 			continue
 		}
-		HeadOfCheck[EMAILFIELD] = *email
-		HeadOfCheck[NOPRINTFIELD] = fmt.Sprint(!*printonpaper)
 		valbindkassa := HeadOfCheck[COLBINDHEADFIELDKASSA]
 		valbindcheck := HeadOfCheck[COLBINDHEADDIELDCHECK]
 		//ищем позиции в файле позиций чека, которые бы соответсвовали бы текущеё строке чека //по номеру ФН и названию кассы
 		checkDescrInfo := fmt.Sprintf("(ФД %v (ФП %v) от %v)", HeadOfCheck[COLFD], HeadOfCheck[COLFP], HeadOfCheck[COLDATE])
-		if OFD != "astral_link" {
+		if (OFD != "astral_link") && (OFD != "astral_union") {
 			descrInfo = fmt.Sprintf("для чека %v ищем позиции", checkDescrInfo)
 			logginInFile(descrInfo)
 			findedPositions, summsOfPayment = findPositions(valbindkassa, valbindcheck, FieldsNames, FieldsNums)
-		} else {
+		} else if OFD != "astral_union" {
 			//findedPositions, summsOfPayment = fillpossitonsbyref(HeadOfCheck, FieldsNames, FieldsNums)
 			descrInfo = fmt.Sprintf("для чека %v получаем позиции get запросом", checkDescrInfo)
 			logginInFile(descrInfo)
@@ -607,6 +706,7 @@ func main() {
 			break
 		}
 		amountOfCheck := 0.0
+		//logsmap[LOGINFO_WITHSTD].Println("findedPositions=", findedPositions)
 		for _, pos := range findedPositions {
 			spos, errgen := strconv.ParseFloat(pos[COLAMOUNTPOS], 64)
 			if errgen != nil {
@@ -629,7 +729,7 @@ func main() {
 			amountOfCheck += spos
 		}
 		mistakesInPayment := false
-		if OFD == "astral_json" {
+		if (OFD == "astral_json") || (OFD == "astral_union") {
 			amountOfCheckinHead, errparseam := strconv.ParseFloat(HeadOfCheck[COLAMOUNTCHECK], 64)
 			if errparseam != nil {
 				descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы для всего чека %v", errparseam, HeadOfCheck[COLAMOUNTCHECK], checkDescrInfo)
@@ -1674,12 +1774,14 @@ func getNumberOfFieldsInCSV(line []string, fieldsnames map[string]string, fields
 		fieldsOfBlock = AllFieldOtherOfCheck
 	} else if partOfCheck == "positions" {
 		fieldsOfBlock = AllFieldPositionsOfCheck
+	} else if partOfCheck == "union" {
+		fieldsOfBlock = AllFieldsUnionOfCheck
 	} else {
 		fieldsOfBlock = AllFieldsHeadOfCheck
 	}
 	//headAndNotOfPositions = AllFieldOtherOfCheck
 	fieldsnums = getNumberOfFieldsInCSVloc(line, fieldsnames, fieldsnums, fieldsOfBlock, true)
-	if partOfCheck == "other" {
+	if (partOfCheck == "other") || (partOfCheck == "union") {
 		return fieldsnums
 	}
 	if partOfCheck == "head" {
