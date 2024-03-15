@@ -22,7 +22,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_02_24_03"
+const VERSION_OF_PROGRAM = "2024_02_28_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -497,9 +497,11 @@ func main() {
 			typetanletemp = "union"
 		}
 		FieldsNums = getNumberOfFieldsInCSV(lines[0], FieldsNames, FieldsNums, typetanletemp)
+		logginInFile(fmt.Sprintln("FieldsNums0", FieldsNums))
 	}
 	//fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_header.csv", "head")
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_poss.csv", "positions")
+	//logginInFile(fmt.Sprintln("FieldsNums01", FieldsNums))
 	if (err != nil) && (OFD != "astral_link") && (OFD != "astral_union") {
 		descrError := fmt.Sprintf("не удлаось (%v) прочитать файл (checks_poss.csv) входных данных (позиции чека)", err)
 		logsmap[LOGERROR].Println(descrError)
@@ -1116,6 +1118,8 @@ func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[
 		log.Fatal("не удлась прочитать csv файл позиций чека", err)
 	}
 	if len(lines) > 0 {
+		//logginInFile(fmt.Sprintln("lines[0]", lines[0]))
+		//logginInFile(fmt.Sprintln("lines[0]", lines[0]))
 		getNumberOfFieldsInCSV(lines[0], fieldsnames, fieldsnums, partOfCheck)
 	}
 	return nil
@@ -1202,8 +1206,16 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 				}
 			}
 		}
+		//logginInFile(fmt.Sprintln("AllFieldPositionsOfCheck", AllFieldPositionsOfCheck))
+		//logginInFile(fmt.Sprintln("fieldsnames", fieldsnames))
+		//logginInFile(fmt.Sprintln("fieldsnums", fieldsnums))
 		for _, field := range AllFieldPositionsOfCheck {
+			//logginInFile(fmt.Sprintln("field", field))
+			//logginInFile(fmt.Sprintln("fieldsnames[field]", fieldsnames[field]))
 			if !isInvField(fieldsnames[field]) {
+				//logginInFile(fmt.Sprintln("notinv"))
+				//logginInFile(fmt.Sprintln("fieldsnums[field]", fieldsnums[field]))
+				//logginInFile(fmt.Sprintln("val=", getfieldval(line, fieldsnums, field)))
 				res[currPos][field] = getfieldval(line, fieldsnums, field)
 				//logsmap[LOGINFO_WITHSTD].Println(field)
 			}
@@ -1736,7 +1748,9 @@ func formatMyNumber(num string) string {
 
 func getNumberOfFieldsInCSVloc(line []string, fieldsnames map[string]string, fieldsnums map[string]int, fieldsOfBlock []string, notinv bool) map[string]int {
 	for _, name := range fieldsOfBlock {
+		//logginInFile(fmt.Sprintf("поиск поля %v", name))
 		colname := fieldsnames[name]
+		//logginInFile(fmt.Sprintln("colname", colname))
 		if notinv && isInvField(colname) {
 			continue
 		}
@@ -1752,11 +1766,12 @@ func getNumberOfFieldsInCSVloc(line []string, fieldsnames map[string]string, fie
 			colnamefinding = colname[posEndServiceWords+1:]
 		}
 		if (name == "bindheadfieldkassa") || (name == "bindheadfieldcheck") || (name == "bindposposfieldcheck") {
-			_, ok := fieldsnames[name]
+			_, ok := fieldsnames[colname]
 			if ok {
 				colnamefinding = fieldsnames[fieldsnames[name]]
 			}
 		}
+		//logginInFile(fmt.Sprintln("colnamefinding", colnamefinding))
 		for i, val := range line {
 			valformated := formatfieldname(val)
 			if valformated == colnamefinding {
