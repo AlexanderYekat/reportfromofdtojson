@@ -15,6 +15,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +23,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_02_28_01"
+const VERSION_OF_PROGRAM = "2024_03_21_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -57,6 +58,10 @@ const COLPRICE = "price"
 const COLAMOUNTPOS = "amountpos"
 const COLPREDMET = "predmet"
 const COLSPOSOB = "sposob"
+const COLPRIZAGENTA = "prizagenta"
+const COLNAMEOFSUPPLIER = "nameofsupl"
+const COLINNOFSUPPLIER = "innofsupl"
+const COLTELOFSUPPLIER = "telofsupl"
 
 const COLSTAVKANDS = "stavkaNDS"
 const COLSTAVKANDS0 = "stavkaNDS0"
@@ -153,6 +158,8 @@ type TPosition struct {
 	ProductCodes *TProductCodesAtol `json:"productCodes,omitempty"`
 	ImcParams    *TImcParams        `json:"imcParams,omitempty"`
 	//Mark         string             `json:"mark,omitempty"`
+	AgentInfo    *TAgentInfo    `json:"agentInfo,omitempty"`
+	SupplierInfo *TSupplierInfo `json:"supplierInfo,omitempty"`
 }
 
 type TTag1192_91 struct {
@@ -165,6 +172,15 @@ type TTag1192_91 struct {
 type TOperator struct {
 	Name  string `json:"name"`
 	Vatin string `json:"vatin,omitempty"`
+}
+
+type TAgentInfo struct {
+	Agents []string `json:"agents"`
+}
+type TSupplierInfo struct {
+	Vatin  string   `json:"vatin"`
+	Name   string   `json:"name,omitempty"`
+	Phones []string `json:"phones,omitempty"`
 }
 
 // При работе по ФФД ≥ 1.1 чеки коррекции имеют вид, аналогичный обычным чекам, но с
@@ -286,6 +302,7 @@ func main() {
 	var ofdmap interface{}
 	var ofdsinit map[string]string
 	var ofdarray map[int]string
+	var numOFDSorted []int
 	runDescription := fmt.Sprintf("программа %v версии %v", NAME_OF_PROGRAM, VERSION_OF_PROGRAM)
 	fmt.Println(runDescription, "запущена")
 	defer fmt.Println(runDescription, "звершена")
@@ -328,10 +345,15 @@ func main() {
 		ofdsinit[v["name"].(string)] = v["descr"].(string)
 		strii := int(v["num"].(int64))
 		ofdarray[strii] = v["name"].(string)
+		numOFDSorted = append(numOFDSorted, strii)
 	}
+	//сортируем по номерам ОФД
+	sort.Ints(numOFDSorted)
 	if *ofdchoice == 0 {
 		sQuestOFD := "Выберите ОФД. "
-		for currNumOfd, v := range ofdarray {
+		for _, currNumOfd := range numOFDSorted {
+			v := ofdarray[currNumOfd]
+			//for currNumOfd, v := range ofdarray {
 			if sQuestOFD != "Выберите ОФД. " {
 				sQuestOFD = sQuestOFD + ", "
 			}
@@ -1270,6 +1292,10 @@ func fillpossitonsbyrefastral(fd, fp, fn string) (map[int]map[string]string, map
 			logsmap[LOGERROR].Println(errDescr)
 			return res, summsPayment, err
 		}
+		//logginInFile("------------------")
+		//logginInFile(string(fullFileName))
+		//logginInFile(string(body))
+		//logginInFile("------------------------------------")
 		ioutil.WriteFile(fullFileName, body, 0644)
 	} else {
 		logginInFile(fmt.Sprintf("запрос %v был уже выполнен ранее", hyperlinkonjson))
@@ -1545,11 +1571,36 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			stavkaNDSStr = STAVKANDS110
 		}
 		if pos[COLSTAVKANDS] != "" {
-			if pos[COLSTAVKANDS] != "НДС не облагается" {
-				logsmap[LOGERROR].Printf("требуется доработка программы для учёта ставки НДС %v в чеке", pos[COLSTAVKANDS])
+			if pos[COLSTAVKANDS] == "20%" {
+				stavkaNDSStr = STAVKANDS20
 			}
+			if pos[COLSTAVKANDS] == "10%" {
+				stavkaNDSStr = STAVKANDS10
+			}
+			if pos[COLSTAVKANDS] == "0%" {
+				stavkaNDSStr = STAVKANDS0
+			}
+			//if pos[COLSTAVKANDS] != "НДС не облагается" {
+			//	logsmap[LOGERROR].Printf("требуется доработка программы для учёта ставки НДС %v в чеке", pos[COLSTAVKANDS])
+			//}
 		}
 		newPos.Tax.Type = stavkaNDSStr
+		if pos[COLPRIZAGENTA] != "" {
+			if strings.ToUpper(pos[COLPRIZAGENTA]) == "КОМИССИОНЕР" {
+				newPos.AgentInfo = new(TAgentInfo)
+				newPos.AgentInfo.Agents = append(newPos.AgentInfo.Agents, "commissionAgent")
+				newPos.SupplierInfo = new(TSupplierInfo)
+				newPos.SupplierInfo.Vatin = pos[COLINNOFSUPPLIER]
+				//teststrloc1 := fmt.Sprintf("Номер колнки ИНН поставщика %v", COLINNOFSUPPLIER)
+				//teststrloc2 := fmt.Sprintf("ИНН поставщика %v", pos[COLINNOFSUPPLIER])
+				//logginInFile(teststrloc1)
+				//logginInFile(teststrloc2)
+				newPos.SupplierInfo.Name = pos[COLNAMEOFSUPPLIER]
+				if pos[COLTELOFSUPPLIER] != "" {
+					newPos.SupplierInfo.Phones = append(newPos.SupplierInfo.Phones, pos[COLTELOFSUPPLIER])
+				}
+			}
+		}
 		//chanePredmetRascheta := false
 		if pos[COLMARK] != "" {
 			measunit = "piece"
