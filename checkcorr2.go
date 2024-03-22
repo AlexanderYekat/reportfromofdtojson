@@ -23,7 +23,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_03_21_01"
+const VERSION_OF_PROGRAM = "2024_03_22_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -303,6 +303,9 @@ func main() {
 	var ofdsinit map[string]string
 	var ofdarray map[int]string
 	var numOFDSorted []int
+	RowOfHeadInHeaderChecks := 1
+	//RowOfHeadInPositionsChecks := 1
+	//RowOfHeadInOtherChecks := 1
 	runDescription := fmt.Sprintf("программа %v версии %v", NAME_OF_PROGRAM, VERSION_OF_PROGRAM)
 	fmt.Println(runDescription, "запущена")
 	defer fmt.Println(runDescription, "звершена")
@@ -518,7 +521,14 @@ func main() {
 		if OFD == "astral_union" {
 			typetanletemp = "union"
 		}
-		FieldsNums = getNumberOfFieldsInCSV(lines[0], FieldsNames, FieldsNums, typetanletemp)
+		//проверка на пустоту первой строки для такском
+		currNumbLineOfHead := 0
+		lineoffields := strings.Join(lines[0], "")
+		if lineoffields[:5] == ";;;;;" {
+			currNumbLineOfHead = 1
+			RowOfHeadInHeaderChecks = 2
+		}
+		FieldsNums = getNumberOfFieldsInCSV(lines[currNumbLineOfHead], FieldsNames, FieldsNums, typetanletemp)
 		logginInFile(fmt.Sprintln("FieldsNums0", FieldsNums))
 	}
 	//fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_header.csv", "head")
@@ -559,11 +569,16 @@ func main() {
 		fictivnaystr := false
 		currNewCheck := false
 		currLine++
-		if currLine == 1 {
+		if currLine <= RowOfHeadInHeaderChecks {
 			continue //пропускаем настройку названий столбцов
 		}
-		if currLine == 2 {
+		if currLine == RowOfHeadInHeaderChecks {
 			currNewCheck = true
+		}
+		regKKT := line[FieldsNums[FieldsNames[COLBINDHEADFIELDKASSA]]]
+		if regKKT == "" {
+			logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как в ней не опредлена касса", currLine, line)
+			continue
 		}
 		if OFD == "astral_union" {
 			if currLine == len(lines) {
@@ -664,7 +679,8 @@ func main() {
 			}
 		}
 		if (HeadOfCheck[COLBINDHEADFIELDKASSA] == "") && (OFD != "astral_json") && (OFD != "astral_union") {
-			logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не опредлена касса", line)
+			//logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не опредлена касса", line)
+			logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как в ней не опредлена касса", currLine, line)
 			continue
 		}
 		//проверяем тип чека
@@ -1142,7 +1158,16 @@ func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[
 	if len(lines) > 0 {
 		//logginInFile(fmt.Sprintln("lines[0]", lines[0]))
 		//logginInFile(fmt.Sprintln("lines[0]", lines[0]))
-		getNumberOfFieldsInCSV(lines[0], fieldsnames, fieldsnums, partOfCheck)
+		//проверка на пустоту первой строки для такском
+		currNumbLineOfHead := 0
+		if strings.Join(lines[0], "") == "" {
+			currNumbLineOfHead = currNumbLineOfHead + 1
+		}
+		lineoffields := strings.Join(lines[currNumbLineOfHead], "")
+		if lineoffields[:5] == ";;;;;" {
+			currNumbLineOfHead = currNumbLineOfHead + 1
+		}
+		getNumberOfFieldsInCSV(lines[currNumbLineOfHead], fieldsnames, fieldsnums, partOfCheck)
 	}
 	return nil
 }
@@ -1677,6 +1702,9 @@ func formatMyDate(dt string) string {
 		y = "20" + dt[6:8]
 	} else {
 		y = dt[6:10]
+	}
+	if strings.Contains(y, " ") {
+		y = "20" + dt[6:8]
 	}
 	m := dt[3:5]
 	d := dt[0:2]
