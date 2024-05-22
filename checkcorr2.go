@@ -15,6 +15,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_03_22_01"
+const VERSION_OF_PROGRAM = "2024_05_21_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -36,6 +37,7 @@ const COLNAMEOFKKT = "nameofkkt"
 
 const COLFD = "fd"
 const COLFP = "fp"
+const COLSTATUSINFNS = "statusofcheck"
 const COLAMOUNTCHECK = "amountCheck"
 const COLNAL = "nal"
 const COLBEZ = "bez"
@@ -44,6 +46,9 @@ const COLAVANCE = "avance"
 const COLVSTRECHPREDST = "vstrechpredst"
 const COLKASSIR = "kassir"
 const COLINNKASSIR = "innkassir"
+const COLNAMECLIENT = "nameclient"
+const COLINNCLIENT = "innclient"
+const COLTELKASSIR = "telkassir"
 const COLDATE = "date"
 const COLOSN = "osn"
 const COLTAG1054 = "tag1054"
@@ -112,7 +117,9 @@ const DIROFREQUEST = "./request/"
 const DIROFREQUESTASTRAL = "./request/astral/"
 
 type TClientInfo struct {
-	EmailOrPhone string `json:"emailOrPhone"`
+	EmailOrPhone string `json:"emailOrPhone,omitempty"`
+	Vatin        string `json:"vatin,omitempty"`
+	Name         string `json:"name,omitempty"`
 }
 
 type TTaxNDS struct {
@@ -287,6 +294,7 @@ var byPrescription = flag.Bool("prescription", false, "по предписани
 var docNumbOfPrescription = flag.String("docnumbprescr", "", "номер документа предписания налоговой")
 var measurementUnitOfFracQuantSimple = flag.String("fracquantunitsimple", "кг", "мера измерения дробного количества товара без макри (кг, л, грамм, иная)")
 var measurementUnitOfFracQuantMark = flag.String("fracquantunitmark", "кг", "мера измерения дробного количества товара с маркой (кг, л, грамм, иная)")
+var checkdoublepos = flag.Bool("checkdoule", false, "проверять на задвоение позиции")
 
 var FieldsNums map[string]int
 var FieldsNames map[string]string
@@ -457,6 +465,9 @@ func main() {
 		input.Scan()
 		log.Panic(descrError)
 	}
+	if OFD == "platforma" {
+		*checkdoublepos = true
+	}
 	//инициализация колонок файлов
 	logginInFile("инициализация номеров колонок")
 	FieldsNums = make(map[string]int)
@@ -523,10 +534,14 @@ func main() {
 		}
 		//проверка на пустоту первой строки для такском
 		currNumbLineOfHead := 0
-		lineoffields := strings.Join(lines[0], "")
+		if strings.Join(lines[0], "") == "" {
+			currNumbLineOfHead = currNumbLineOfHead + 1
+			RowOfHeadInHeaderChecks = RowOfHeadInHeaderChecks + 1
+		}
+		lineoffields := strings.Join(lines[currNumbLineOfHead], "")
 		if lineoffields[:5] == ";;;;;" {
-			currNumbLineOfHead = 1
-			RowOfHeadInHeaderChecks = 2
+			currNumbLineOfHead = currNumbLineOfHead + 1
+			RowOfHeadInHeaderChecks = RowOfHeadInHeaderChecks + 1
 		}
 		FieldsNums = getNumberOfFieldsInCSV(lines[currNumbLineOfHead], FieldsNames, FieldsNums, typetanletemp)
 		logginInFile(fmt.Sprintln("FieldsNums0", FieldsNums))
@@ -566,6 +581,7 @@ func main() {
 	for _, line := range lines {
 		var summsOfPayment map[string]float64
 		var findedPositions map[int]map[string]string
+		var passedPositions []int
 		fictivnaystr := false
 		currNewCheck := false
 		currLine++
@@ -579,6 +595,13 @@ func main() {
 		if regKKT == "" {
 			logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как в ней не опредлена касса", currLine, line)
 			continue
+		}
+		//проверяем статус чека в ФНС
+		if num, ok := FieldsNums[COLSTATUSINFNS]; ok {
+			if !strings.Contains(strings.ToUpper(line[num]), strings.ToUpper("Ошибка")) {
+				logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как чек принят ФНС", currLine, line)
+				continue
+			}
 		}
 		if OFD == "astral_union" {
 			if currLine == len(lines) {
@@ -618,6 +641,8 @@ func main() {
 					HeadOfCheck[COLDATE] = PrevAllFieldsOfCheck[COLDATE]
 					HeadOfCheck[COLTAG1054] = PrevAllFieldsOfCheck[COLTAG1054]
 					HeadOfCheck[COLKASSIR] = PrevAllFieldsOfCheck[COLKASSIR]
+					HeadOfCheck[COLNAMECLIENT] = PrevAllFieldsOfCheck[COLNAMECLIENT]
+					HeadOfCheck[COLINNCLIENT] = PrevAllFieldsOfCheck[COLINNCLIENT]
 					HeadOfCheck[COLAMOUNTCHECK] = PrevAllFieldsOfCheck[COLAMOUNTCHECK]
 					HeadOfCheck[COLNAL] = PrevAllFieldsOfCheck[COLNAL]
 					HeadOfCheck[COLBEZ] = PrevAllFieldsOfCheck[COLBEZ]
@@ -696,7 +721,7 @@ func main() {
 		if (OFD != "astral_link") && (OFD != "astral_union") {
 			descrInfo = fmt.Sprintf("для чека %v ищем позиции", checkDescrInfo)
 			logginInFile(descrInfo)
-			findedPositions, summsOfPayment = findPositions(valbindkassa, valbindcheck, FieldsNames, FieldsNums)
+			findedPositions, summsOfPayment = findPositions(valbindkassa, valbindcheck, FieldsNames, FieldsNums, &passedPositions)
 		} else if OFD != "astral_union" {
 			//findedPositions, summsOfPayment = fillpossitonsbyref(HeadOfCheck, FieldsNames, FieldsNums)
 			descrInfo = fmt.Sprintf("для чека %v получаем позиции get запросом", checkDescrInfo)
@@ -1172,7 +1197,7 @@ func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[
 	return nil
 }
 
-func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames map[string]string, fieldsnums map[string]int) (map[int]map[string]string, map[string]float64) {
+func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames map[string]string, fieldsnums map[string]int, passedPositions *[]int) (map[int]map[string]string, map[string]float64) {
 	//fmt.Println("valbindkassainhead", valbindkassainhead)
 	//fmt.Println("valbindcheckinhead", valbindcheckinhead)
 	//logsmap[LOGINFO].Println("*****************************************************")
@@ -1201,6 +1226,8 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 	currLine := 0
 	valbindkassainpos := ""
 	valbindcheckpos := ""
+	wasfindedpositions := false
+	//wasfindedandlosspositions := false
 	for _, line := range lines { //перебор всех строк в файле позиций чека
 		currLine++
 		//fmt.Println(line)
@@ -1219,15 +1246,24 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 			valbindkassainpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
 			valbindcheckpos = getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
 		}
-		//logsmap[LOGINFO].Println("valbindkassainpos", valbindkassainpos)
-		//logsmap[LOGINFO].Println("valbindcheckpos", valbindcheckpos)
+		valbindkassainhead = strings.TrimLeft(valbindkassainhead, "0")
+		valbindkassainpos = strings.TrimLeft(valbindkassainpos, "0")
+		valbindcheckinhead = strings.TrimLeft(valbindcheckinhead, "0")
+		valbindcheckpos = strings.TrimLeft(valbindcheckpos, "0")
 		if (valbindkassainhead != valbindkassainpos) || (valbindcheckinhead != valbindcheckpos) {
+			if *checkdoublepos {
+				if wasfindedpositions {
+					//wasfindedandlosspositions = true
+					break
+				}
+			}
 			continue
 		}
 		//if !notEmptyFloatField(getfieldval(line, fieldsnums, COLQUANTITY)) {
 		//	continue //пропускаем строки с пустым или нулевым количесве
 		//}
 		logstr := fmt.Sprintln("Найдена строка", line)
+		wasfindedpositions = true
 		logginInFile(logstr)
 		currPos++
 		res[currPos] = make(map[string]string)
@@ -1270,8 +1306,10 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 		if (OFD == "platforma") || (OFD == "firstofd") {
 			//ищем марки в таблице марок
 			logginInFile("ищем марки в дполнительном файле платформы ОФД")
+			logginInFile(fmt.Sprintln("passedPositions before", passedPositions))
 			marka, err := findMarkInOtherFile(res[currPos][COLBINDPOSFIELDKASSA], res[currPos][COLBINDPOSFIELDCHECK],
-				res[currPos][COLBINDPOSPOSFIELDCHECK], fieldsnums)
+				res[currPos][COLBINDPOSPOSFIELDCHECK], fieldsnums, passedPositions)
+			logginInFile(fmt.Sprintln("passedPositions after", passedPositions))
 			if err != nil {
 				errDescr := fmt.Sprintf("ошибка (%v), не удалось прочитать файл марок", err)
 				logsmap[LOGERROR].Println(errDescr)
@@ -1328,7 +1366,7 @@ func fillpossitonsbyrefastral(fd, fp, fn string) (map[int]map[string]string, map
 	return res, summsPayment, err
 }
 
-func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int) (string, error) {
+func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int, passedPositions *[]int) (string, error) {
 	var marka string
 	//проверяем существует ли файл
 	logstr := fmt.Sprintln("ищме в файле марок:", "kassa", kassa, "doc", doc, "posnum", posnum)
@@ -1360,6 +1398,13 @@ func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int) (
 		if currLine == 1 {
 			continue
 		}
+		logginInFile(fmt.Sprintln("passedPositions=", *passedPositions))
+		logginInFile(fmt.Sprintln("currLine=", currLine))
+		found := slices.Contains(*passedPositions, currLine)
+		logginInFile(fmt.Sprintln("found", found))
+		if found {
+			continue
+		}
 		//logstr := fmt.Sprintln(line)
 		//logginInFile(logstr)
 		kassaother := getfieldval(line, fieldsnums, COLBINDOTHERKASSS)
@@ -1384,6 +1429,7 @@ func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int) (
 			//logginInFile("не подходит строка")
 			continue
 		}
+		(*passedPositions) = append(*passedPositions, currLine)
 		//logginInFile("подходит строка")
 		marka = getfieldval(line, fieldsnums, COLMARKOTHER)
 		if marka == "" {
@@ -1454,6 +1500,12 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	checkCorr.CorrectionBaseNumber = correctionBaseNumber
 	checkCorr.ClientInfo.EmailOrPhone = headofcheck[EMAILFIELD]
 	checkCorr.Operator.Name = headofcheck[COLKASSIR]
+	if headofcheck[COLINNCLIENT] != "" {
+		checkCorr.ClientInfo.Vatin = headofcheck[COLINNCLIENT]
+	}
+	if headofcheck[COLNAMECLIENT] != "" {
+		checkCorr.ClientInfo.Name = headofcheck[COLNAMECLIENT]
+	}
 	checkCorr.Operator.Vatin = headofcheck[COLINNKASSIR]
 	nal := headofcheck[COLNAL]
 	if notEmptyFloatField(nal) {
@@ -1628,6 +1680,9 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		}
 		//chanePredmetRascheta := false
 		if pos[COLMARK] != "" {
+			if newPos.PaymentObject == "commodity" {
+				newPos.PaymentObject = "commodityWithMarking"
+			}
 			measunit = "piece"
 			if qch != 1 {
 				measunit = getMeasUnitFromStr(*measurementUnitOfFracQuantMark)
@@ -2032,6 +2087,15 @@ func isInvField(fieldname string) bool {
 
 func getSposobRash(sposob string) string {
 	res := "fullPayment"
+	if strings.Contains(strings.ToUpper(sposob), "ПРЕДОПЛАТА 100%") {
+		res = "fullPrepayment"
+	}
+	if strings.ToUpper(sposob) == "ПРЕДОПЛАТА" {
+		res = "prepayment"
+	}
+	if strings.EqualFold(sposob, "Аванс") {
+		res = "advance"
+	}
 	return res
 }
 
@@ -2044,6 +2108,8 @@ func getOsnFromChernovVal(osnChernvVal string) string {
 		res = "usnIncome"
 	case "усн доход-расход":
 		res = "usnIncomeOutcome"
+	case "усн доход - расход":
+		res = "usnIncomeOutcome"
 	case "есн":
 		res = "esn"
 	case "патент":
@@ -2054,7 +2120,7 @@ func getOsnFromChernovVal(osnChernvVal string) string {
 
 func getPredmRasch(predm string) string {
 	res := "commodity"
-	switch predm {
+	switch strings.ToUpper(predm) {
 	case "ТМ":
 		res = "commodityWithMarking"
 	case "ПОДАКЦИЗНЫЙ ТОВАР":
@@ -2063,6 +2129,10 @@ func getPredmRasch(predm string) string {
 		res = "commodityWithoutMarking"
 	case "АТМ":
 		res = "exciseWithMarking"
+	case "ПЛАТЕЖ":
+		res = "payment"
+	case "УСЛУГА":
+		res = "service"
 	}
 	return res
 }
@@ -2195,6 +2265,8 @@ func getMeasUnitFromStr(s string) string {
 		res = "gram"
 	case "иная":
 		res = "otherUnits"
+	case "шт":
+		res = "piece"
 	}
 	return res
 }
