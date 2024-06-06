@@ -24,7 +24,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_05_21_01"
+const VERSION_OF_PROGRAM = "2024_05_23_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -1293,7 +1293,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 		//logginInFile(fmt.Sprintln("fieldsnames", fieldsnames))
 		//logginInFile(fmt.Sprintln("fieldsnums", fieldsnums))
 		for _, field := range AllFieldPositionsOfCheck {
-			//logginInFile(fmt.Sprintln("field", field))
+			logginInFile(fmt.Sprintln("field", field))
 			//logginInFile(fmt.Sprintln("fieldsnames[field]", fieldsnames[field]))
 			if !isInvField(fieldsnames[field]) {
 				//logginInFile(fmt.Sprintln("notinv"))
@@ -1647,14 +1647,13 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		} else if pos[COLSTAVKANDS110] != "" {
 			stavkaNDSStr = STAVKANDS110
 		}
+		logginInFile(fmt.Sprintln("pos[COLSTAVKANDS]=", pos[COLSTAVKANDS]))
 		if pos[COLSTAVKANDS] != "" {
-			if pos[COLSTAVKANDS] == "20%" {
+			if strings.Contains(pos[COLSTAVKANDS], "20") {
 				stavkaNDSStr = STAVKANDS20
-			}
-			if pos[COLSTAVKANDS] == "10%" {
+			} else if strings.Contains(pos[COLSTAVKANDS], "10") {
 				stavkaNDSStr = STAVKANDS10
-			}
-			if pos[COLSTAVKANDS] == "0%" {
+			} else if strings.Contains(pos[COLSTAVKANDS], "0%") || strings.Contains(pos[COLSTAVKANDS], "0 %") {
 				stavkaNDSStr = STAVKANDS0
 			}
 			//if pos[COLSTAVKANDS] != "НДС не облагается" {
@@ -1662,20 +1661,28 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			//}
 		}
 		newPos.Tax.Type = stavkaNDSStr
+		postDataExist := false
 		if pos[COLPRIZAGENTA] != "" {
 			if strings.ToUpper(pos[COLPRIZAGENTA]) == "КОМИССИОНЕР" {
-				newPos.AgentInfo = new(TAgentInfo)
-				newPos.AgentInfo.Agents = append(newPos.AgentInfo.Agents, "commissionAgent")
-				newPos.SupplierInfo = new(TSupplierInfo)
-				newPos.SupplierInfo.Vatin = pos[COLINNOFSUPPLIER]
-				//teststrloc1 := fmt.Sprintf("Номер колнки ИНН поставщика %v", COLINNOFSUPPLIER)
-				//teststrloc2 := fmt.Sprintf("ИНН поставщика %v", pos[COLINNOFSUPPLIER])
-				//logginInFile(teststrloc1)
-				//logginInFile(teststrloc2)
-				newPos.SupplierInfo.Name = pos[COLNAMEOFSUPPLIER]
-				if pos[COLTELOFSUPPLIER] != "" {
-					newPos.SupplierInfo.Phones = append(newPos.SupplierInfo.Phones, pos[COLTELOFSUPPLIER])
-				}
+				postDataExist = true
+			}
+		} else {
+			if pos[COLINNOFSUPPLIER] != "" {
+				postDataExist = true
+			}
+		}
+		if postDataExist {
+			newPos.AgentInfo = new(TAgentInfo)
+			newPos.AgentInfo.Agents = append(newPos.AgentInfo.Agents, "commissionAgent")
+			newPos.SupplierInfo = new(TSupplierInfo)
+			newPos.SupplierInfo.Vatin = pos[COLINNOFSUPPLIER]
+			//teststrloc1 := fmt.Sprintf("Номер колнки ИНН поставщика %v", COLINNOFSUPPLIER)
+			//teststrloc2 := fmt.Sprintf("ИНН поставщика %v", pos[COLINNOFSUPPLIER])
+			//logginInFile(teststrloc1)
+			//logginInFile(teststrloc2)
+			newPos.SupplierInfo.Name = pos[COLNAMEOFSUPPLIER]
+			if pos[COLTELOFSUPPLIER] != "" {
+				newPos.SupplierInfo.Phones = append(newPos.SupplierInfo.Phones, pos[COLTELOFSUPPLIER])
 			}
 		}
 		//chanePredmetRascheta := false
