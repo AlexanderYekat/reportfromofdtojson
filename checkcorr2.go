@@ -24,7 +24,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_05_23_01"
+const VERSION_OF_PROGRAM = "2024_07_25_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -704,7 +704,6 @@ func main() {
 			}
 		}
 		if (HeadOfCheck[COLBINDHEADFIELDKASSA] == "") && (OFD != "astral_json") && (OFD != "astral_union") {
-			//logsmap[LOGERROR].Printf("строка %v пропущена, так как в ней не опредлена касса", line)
 			logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как в ней не опредлена касса", currLine, line)
 			continue
 		}
@@ -1751,8 +1750,16 @@ func formatMyDate(dt string) string {
 	//09.01.2024 15:42
 	//2023-11-09 - офд.ru
 	//10.11.23 19:40 - сбис
+	//2023-01-01T15:50
 	if OFD == "ofdru" {
 		res := strings.ReplaceAll(dt, "-", ".")
+		return res
+	}
+	indOfT := strings.Index(dt, "T")
+	if indOfT > 0 {
+		//res := strings.ReplaceAll(dt, "T", " ")
+		res := dt[:10]
+		res = strings.ReplaceAll(res, "-", ".")
 		return res
 	}
 	indOfPoint := strings.Index(dt, ".")
