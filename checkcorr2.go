@@ -24,7 +24,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_07_25_01"
+const VERSION_OF_PROGRAM = "2024_09_04_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -35,6 +35,8 @@ const COLREGNUMKKT = "regnumkkt"
 const COLFNKKT = "fnkkt"
 const COLNAMEOFKKT = "nameofkkt"
 
+const COLNUMSM = "numSm"
+const COLNUMCHECKSMENA = "numChechSmena"
 const COLFD = "fd"
 const COLFP = "fp"
 const COLSTATUSINFNS = "statusofcheck"
@@ -288,7 +290,7 @@ var clearLogsProgramm = flag.Bool("clearlogs", true, "очистить логи 
 var ofdchoice = flag.Int("ofd", 0, "Порядковый номер ОФД в файле настроек init.toml раздел [template.ofd]")
 var email = flag.String("email", "", "email, на которое будут отсылаться все чеки")
 var printonpaper = flag.Bool("print", true, "печатать на бумагу (true) или не печатать (false) чек коорекции")
-var debug = flag.Bool("debug", false, "режим отладки")
+var debug = flag.Bool("debug", true, "режим отладки")
 var fetchalways = flag.Bool("fetchalways", true, "всегда посылать запросы по ссылке, не зависимо от предмета расчета")
 var byPrescription = flag.Bool("prescription", false, "по предписанию (true) или самостоятельно (false)")
 var docNumbOfPrescription = flag.String("docnumbprescr", "", "номер документа предписания налоговой")
@@ -303,6 +305,8 @@ var AllFieldsUnionOfCheck []string
 var AllFieldsHeadOfCheck []string
 var AllFieldPositionsOfCheck []string
 var AllFieldOtherOfCheck []string
+
+var glDelimitter rune
 
 // var emulation = flag.Bool("emul", false, "эмуляция")
 func main() {
@@ -481,6 +485,8 @@ func main() {
 			AllFieldsHeadOfCheck = append(AllFieldsHeadOfCheck, k)
 		}
 		for k := range data["fields"].(map[string]interface{})["check"].(map[string]interface{}) {
+			//logginInFile(fmt.Sprintf("check field %v", k))
+			//logginInFile(fmt.Sprintf("check field %v", data["fields"].(map[string]interface{})["check"].(map[string]interface{})[k]))
 			AllFieldsHeadOfCheck = append(AllFieldsHeadOfCheck, k)
 		}
 		for k := range data["fields"].(map[string]interface{})["positions"].(map[string]interface{}) {
@@ -514,7 +520,11 @@ func main() {
 	csv_red := csv.NewReader(f)
 	csv_red.FieldsPerRecord = -1
 	csv_red.LazyQuotes = true
-	csv_red.Comma = ';'
+	glDelimitter = ';'
+	if OFD == "customer" {
+		glDelimitter = ','
+	}
+	csv_red.Comma = glDelimitter
 	logginInFile("чтение списка чеков")
 	lines, err := csv_red.ReadAll()
 	if err != nil {
@@ -543,8 +553,16 @@ func main() {
 			currNumbLineOfHead = currNumbLineOfHead + 1
 			RowOfHeadInHeaderChecks = RowOfHeadInHeaderChecks + 1
 		}
+		//logginInFile(fmt.Sprintf("currNumbLineOfHead=%v", currNumbLineOfHead))
+		//logginInFile(fmt.Sprintf("RowOfHeadInHeaderChecks=%v", RowOfHeadInHeaderChecks))
+		//logginInFile(fmt.Sprintf("lines[currNumbLineOfHead]=%v", lines[currNumbLineOfHead]))
+		//logginInFile(fmt.Sprintf("lineoffields=%v", lineoffields))
+		//logginInFile(fmt.Sprintf("typetanletemp=%v", typetanletemp))
+		//logginInFile(fmt.Sprintf("OFD=%v", OFD))
+		//logginInFile(fmt.Sprintf("FieldsNames=%v", FieldsNames))
+		//logginInFile(fmt.Sprintf("FieldsNums=%v", FieldsNums))
 		FieldsNums = getNumberOfFieldsInCSV(lines[currNumbLineOfHead], FieldsNames, FieldsNums, typetanletemp)
-		logginInFile(fmt.Sprintln("FieldsNums0", FieldsNums))
+		//logginInFile(fmt.Sprintln("FieldsNums0", FieldsNums))
 	}
 	//fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_header.csv", "head")
 	err = fillFieldsNumByPositionTable(FieldsNames, FieldsNums, "checks_poss.csv", "positions")
@@ -592,13 +610,21 @@ func main() {
 			currNewCheck = true
 		}
 		regKKT := line[FieldsNums[FieldsNames[COLBINDHEADFIELDKASSA]]]
+		//logginInFile(fmt.Sprintf("regKKT=%v", regKKT))
+		//logginInFile(fmt.Sprintf("COLBINDHEADFIELDKASSA=%v", COLBINDHEADFIELDKASSA))
+		//logginInFile(fmt.Sprintf("FieldsNames[COLBINDHEADFIELDKASSA]=%v", FieldsNames[COLBINDHEADFIELDKASSA]))
+		//logginInFile(fmt.Sprintf("FieldsNums[FieldsNames[COLBINDHEADFIELDKASSA]]=%v", FieldsNums[FieldsNames[COLBINDHEADFIELDKASSA]]))
+		//logginInFile(fmt.Sprintf("FieldsNums[FieldsNames[COLBINDHEADFIELDKASSA]]=%v", FieldsNums[FieldsNames[COLBINDHEADFIELDKASSA]]))
+		//logginInFile(fmt.Sprintf("FieldsNames[regnumkkt]=%v", FieldsNames["regnumkkt"]))
+		//logginInFile(fmt.Sprintf("FieldsNames[Регистрационный номер ККТ]=%v", FieldsNames["Регистрационный номер ККТ"]))
 		if regKKT == "" {
 			logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как в ней не опредлена касса", currLine, line)
 			continue
 		}
 		//проверяем статус чека в ФНС
 		if num, ok := FieldsNums[COLSTATUSINFNS]; ok {
-			if !strings.Contains(strings.ToUpper(line[num]), strings.ToUpper("Ошибка")) {
+			if (!strings.Contains(strings.ToUpper(line[num]), strings.ToUpper("Ошибка"))) && (!strings.Contains(strings.ToUpper(line[num]), strings.ToUpper("ошибки"))) {
+				logsmap[LOGINFO].Printf("1строка №%v \"%v\" пропущена, так как чек принят ФНС", currLine, line)
 				logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как чек принят ФНС", currLine, line)
 				continue
 			}
@@ -1126,7 +1152,33 @@ func main() {
 					f.Close()
 				}
 			}
-			file_name := fmt.Sprintf("%v%v/%v_%v.json", JSONRES, HeadOfCheck[COLFNKKT], HeadOfCheck[COLFNKKT], HeadOfCheck[COLFD])
+			str_name_file := fmt.Sprintf("%v_%v.json", HeadOfCheck[COLFNKKT], HeadOfCheck[COLFD])
+			if HeadOfCheck[COLFD] == "" {
+				//str_name_file = fmt.Sprintf("%v_%v_%v.json", HeadOfCheck[COLFNKKT], HeadOfCheck[COLFD])
+				num_sm_str := HeadOfCheck[FieldsNames[COLBINDHEADFIELDKASSA]]
+				name_file_numb := 0
+				name_file_numb_str := ""
+				num_sm, err_sm := strconv.ParseInt(num_sm_str, 10, 64)
+				//logginInFile(fmt.Sprintf("num_sm=%v, err_sm=%v", num_sm, err_sm))
+				if err_sm == nil {
+					name_file_numb = int(num_sm) * 10000
+				}
+				num_ch_str := HeadOfCheck[FieldsNames[COLBINDHEADDIELDCHECK]]
+				num_ch, err_ch := strconv.ParseInt(num_ch_str, 10, 64)
+				//logginInFile(fmt.Sprintf("num_ch=%v, err_ch=%v", num_ch, err_ch))
+				if err_ch == nil {
+					name_file_numb = name_file_numb + int(num_ch)
+				}
+				//logginInFile(fmt.Sprintf("name_file_numb=%v", name_file_numb))
+				if err_sm == nil && err_ch == nil {
+					name_file_numb_str = strconv.Itoa(name_file_numb)
+				} else {
+					name_file_numb_str = num_sm_str + num_ch_str
+				}
+				str_name_file = fmt.Sprintf("%v_%v.json", HeadOfCheck[COLFNKKT], name_file_numb_str)
+				//str_name_file = fmt.Sprintf("%v.json", HeadOfCheck[COLFNKKT])
+			}
+			file_name := fmt.Sprintf("%v%v/%v.json", JSONRES, HeadOfCheck[COLFNKKT], str_name_file)
 			f, err := os.Create(file_name)
 			if err != nil {
 				descrError := fmt.Sprintf("ошибка (%v) создания файла json чека (%v)", err, checkDescrInfo)
@@ -1174,7 +1226,7 @@ func fillFieldsNumByPositionTable(fieldsnames map[string]string, fieldsnums map[
 	csv_red := csv.NewReader(f)
 	csv_red.FieldsPerRecord = -1
 	csv_red.LazyQuotes = true
-	csv_red.Comma = ';'
+	csv_red.Comma = glDelimitter
 	lines, err := csv_red.ReadAll()
 	if err != nil {
 		log.Fatal("не удлась прочитать csv файл позиций чека", err)
@@ -1214,7 +1266,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 	csv_red := csv.NewReader(f)
 	csv_red.FieldsPerRecord = -1
 	csv_red.LazyQuotes = true
-	csv_red.Comma = ';'
+	csv_red.Comma = glDelimitter
 	lines, err := csv_red.ReadAll()
 	if err != nil {
 		errDescr := fmt.Sprintf("ошибка (%v). не удлась прочитать csv файл позиций чека", err)
@@ -1233,7 +1285,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 		if currLine == 1 {
 			continue
 		}
-		if OFD == "sbis" {
+		if OFD == "sbis" || OFD == "yandex" || OFD == "customer" {
 			kassaname := getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
 			docnum := getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
 			if kassaname != "" || docnum != "" {
@@ -1384,7 +1436,7 @@ func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int, p
 	csv_red := csv.NewReader(f)
 	csv_red.FieldsPerRecord = -1
 	csv_red.LazyQuotes = true
-	csv_red.Comma = ';'
+	csv_red.Comma = glDelimitter
 	lines, err := csv_red.ReadAll()
 	if err != nil {
 		errDescr := fmt.Sprintf("ошибка (%v), не удлась открыть csv файл марок чека", err)
@@ -1473,7 +1525,7 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	}
 	checkCorr.Type = chekcCorrTypeLoc
 	if checkCorr.Type == "" {
-		descError := fmt.Sprintf("ошибка (для типа %v не определён тип чека коррекциии) %v", typeCheck, strInfoAboutCheck)
+		descError := fmt.Sprintf("ошибка (для типа \"%v\" не определён тип чека коррекциии) %v", typeCheck, strInfoAboutCheck)
 		logsmap[LOGERROR].Println(descError)
 		return checkCorr, descError, errors.New("ошибка определения типа чека коррекции")
 	}
@@ -1495,7 +1547,11 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		correctionBaseNumber = *docNumbOfPrescription
 	}
 	checkCorr.CorrectionType = correctionType
-	checkCorr.CorrectionBaseDate = headofcheck[COLDATE]
+	if OFD == "customer" {
+		checkCorr.CorrectionBaseDate = ""
+	} else {
+		checkCorr.CorrectionBaseDate = headofcheck[COLDATE]
+	}
 	checkCorr.CorrectionBaseNumber = correctionBaseNumber
 	checkCorr.ClientInfo.EmailOrPhone = headofcheck[EMAILFIELD]
 	checkCorr.Operator.Name = headofcheck[COLKASSIR]
@@ -1750,7 +1806,14 @@ func formatMyDate(dt string) string {
 	//09.01.2024 15:42
 	//2023-11-09 - офд.ru
 	//10.11.23 19:40 - сбис
+	//2024-01-01 22:55:00 - яндекс
+	//2024-05-30 10:07:00
 	//2023-01-01T15:50
+	if (OFD == "yandex") || (OFD == "customer") {
+		res := dt[:10]
+		res = strings.ReplaceAll(res, "-", ".")
+		return res
+	}
 	if OFD == "ofdru" {
 		res := strings.ReplaceAll(dt, "-", ".")
 		return res
@@ -1896,9 +1959,9 @@ func formatMyNumber(num string) string {
 
 func getNumberOfFieldsInCSVloc(line []string, fieldsnames map[string]string, fieldsnums map[string]int, fieldsOfBlock []string, notinv bool) map[string]int {
 	for _, name := range fieldsOfBlock {
-		//logginInFile(fmt.Sprintf("поиск поля %v", name))
+		logginInFile(fmt.Sprintf("поиск поля %v", name))
 		colname := fieldsnames[name]
-		//logginInFile(fmt.Sprintln("colname", colname))
+		logginInFile(fmt.Sprintln("colname", colname))
 		if notinv && isInvField(colname) {
 			continue
 		}
@@ -1906,6 +1969,7 @@ func getNumberOfFieldsInCSVloc(line []string, fieldsnames map[string]string, fie
 			continue
 		}
 		colnamefinding := colname
+		logginInFile(fmt.Sprintf("colnamefinding=%v", colnamefinding))
 		if len(colname) == 0 {
 			continue
 		}
@@ -1919,9 +1983,12 @@ func getNumberOfFieldsInCSVloc(line []string, fieldsnames map[string]string, fie
 				colnamefinding = fieldsnames[fieldsnames[name]]
 			}
 		}
-		//logginInFile(fmt.Sprintln("colnamefinding", colnamefinding))
+		logginInFile(fmt.Sprintln("colnamefinding", colnamefinding))
 		for i, val := range line {
 			valformated := formatfieldname(val)
+			logginInFile(fmt.Sprintf("valformated=%v", valformated))
+			logginInFile(fmt.Sprintf("colnamefinding=%v", colnamefinding))
+			logginInFile(fmt.Sprintf("valformated == colnamefinding=%v", valformated == colnamefinding))
 			if valformated == colnamefinding {
 				fieldsnums[name] = i
 				break
@@ -1942,8 +2009,11 @@ func getNumberOfFieldsInCSV(line []string, fieldsnames map[string]string, fields
 	} else {
 		fieldsOfBlock = AllFieldsHeadOfCheck
 	}
+	logginInFile(fmt.Sprintf("AllFieldsUnionOfCheck=%v", AllFieldsUnionOfCheck))
 	//headAndNotOfPositions = AllFieldOtherOfCheck
+	logginInFile(fmt.Sprintf("fieldsnums=%v", fieldsnums))
 	fieldsnums = getNumberOfFieldsInCSVloc(line, fieldsnames, fieldsnums, fieldsOfBlock, true)
+	logginInFile(fmt.Sprintf("fieldsnums=%v", fieldsnums))
 	if (partOfCheck == "other") || (partOfCheck == "union") {
 		return fieldsnums
 	}
@@ -2146,6 +2216,8 @@ func getPredmRasch(predm string) string {
 	case "ПЛАТЕЖ":
 		res = "payment"
 	case "УСЛУГА":
+		res = "service"
+	case "4":
 		res = "service"
 	}
 	return res
