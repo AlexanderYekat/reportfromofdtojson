@@ -20,11 +20,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_09_04_01"
+const VERSION_OF_PROGRAM = "2024_09_09_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -38,6 +39,7 @@ const COLNAMEOFKKT = "nameofkkt"
 const COLNUMSM = "numSm"
 const COLNUMCHECKSMENA = "numChechSmena"
 const COLFD = "fd"
+const COLORIGINFD = "orignFD"
 const COLFP = "fp"
 const COLSTATUSINFNS = "statusofcheck"
 const COLAMOUNTCHECK = "amountCheck"
@@ -297,6 +299,8 @@ var docNumbOfPrescription = flag.String("docnumbprescr", "", "номер док�
 var measurementUnitOfFracQuantSimple = flag.String("fracquantunitsimple", "кг", "мера измерения дробного количества товара без макри (кг, л, грамм, иная)")
 var measurementUnitOfFracQuantMark = flag.String("fracquantunitmark", "кг", "мера измерения дробного количества товара с маркой (кг, л, грамм, иная)")
 var checkdoublepos = flag.Bool("checkdoule", false, "проверять на задвоение позиции")
+var reverseoper = flag.Bool("reverse", false, "сделать операцию обратной оперцаии чека (приход станет возратом и наоборот)")
+var addOsnovaniyIfExist = flag.Bool("addosnovisexist", false, "добавлять основание самого первого чека если оно существует")
 
 var FieldsNums map[string]int
 var FieldsNames map[string]string
@@ -1152,7 +1156,7 @@ func main() {
 					f.Close()
 				}
 			}
-			str_name_file := fmt.Sprintf("%v_%v.json", HeadOfCheck[COLFNKKT], HeadOfCheck[COLFD])
+			str_name_file := fmt.Sprintf("%v_%v", HeadOfCheck[COLFNKKT], HeadOfCheck[COLFD])
 			if HeadOfCheck[COLFD] == "" {
 				//str_name_file = fmt.Sprintf("%v_%v_%v.json", HeadOfCheck[COLFNKKT], HeadOfCheck[COLFD])
 				num_sm_str := HeadOfCheck[FieldsNames[COLBINDHEADFIELDKASSA]]
@@ -1175,7 +1179,7 @@ func main() {
 				} else {
 					name_file_numb_str = num_sm_str + num_ch_str
 				}
-				str_name_file = fmt.Sprintf("%v_%v.json", HeadOfCheck[COLFNKKT], name_file_numb_str)
+				str_name_file = fmt.Sprintf("%v_%v", HeadOfCheck[COLFNKKT], name_file_numb_str)
 				//str_name_file = fmt.Sprintf("%v.json", HeadOfCheck[COLFNKKT])
 			}
 			file_name := fmt.Sprintf("%v%v/%v.json", JSONRES, HeadOfCheck[COLFNKKT], str_name_file)
@@ -1499,6 +1503,18 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	strInfoAboutCheck := fmt.Sprintf("(ФД %v, ФП %v %v)", headofcheck[COLFD], headofcheck[COLFP], headofcheck[COLDATE])
 	chekcCorrTypeLoc := ""
 	typeCheck := strings.ToLower(headofcheck[COLTAG1054])
+	//если нужно сделать операцию обратной
+	if *reverseoper {
+		if typeCheck == "приход" {
+			typeCheck = "возврат прихода"
+		} else if typeCheck == "расход" {
+			typeCheck = "возврат расхода"
+		} else if typeCheck == "возврат прихода" {
+			typeCheck = "приход"
+		} else if typeCheck == "возврат расхода" {
+			typeCheck = "расход"
+		}
+	}
 	if typeCheck == "приход" {
 		chekcCorrTypeLoc = "sellCorrection"
 	}
@@ -1547,11 +1563,11 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		correctionBaseNumber = *docNumbOfPrescription
 	}
 	checkCorr.CorrectionType = correctionType
-	if OFD == "customer" {
-		checkCorr.CorrectionBaseDate = ""
-	} else {
-		checkCorr.CorrectionBaseDate = headofcheck[COLDATE]
-	}
+	//if OFD == "customer" {
+	//checkCorr.CorrectionBaseDate = ""
+	//} else {
+	checkCorr.CorrectionBaseDate = headofcheck[COLDATE]
+	//}
 	checkCorr.CorrectionBaseNumber = correctionBaseNumber
 	checkCorr.ClientInfo.EmailOrPhone = headofcheck[EMAILFIELD]
 	checkCorr.Operator.Name = headofcheck[COLKASSIR]
@@ -1620,9 +1636,11 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	}
 	currFP := headofcheck[COLFP]
 	currFD := headofcheck[COLFD]
-	//if currFP == "" {
-	//	currFP = headofcheck[COLFD]
-	//}
+	orignFD := headofcheck[COLORIGINFD]
+	//"ФД 1122" или ""
+	if strings.Contains(orignFD, "ФД") {
+		orignFD = extractNumber(orignFD)
+	}
 	//в тег 1192 - записываем ФП //(если нет ФП, то записываем ФД) - отменил
 	if (currFP != "") || (currFD != "") {
 		newAdditionalAttribute := TTag1192_91{Type: "additionalAttribute"}
@@ -1634,10 +1652,26 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		newAdditionalAttribute.Print = true
 		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
 	}
+	strDop1 := ""
+	strDop2 := ""
+	if !*addOsnovaniyIfExist {
+		orignFD = ""
+	}
+	if orignFD != "" {
+		strDop1 = " коррекции"
+		strDop2 = " чека"
+	}
 	if (currFD != "") && (currFP != "") {
 		newAdditionalAttribute := TTag1192_91{Type: "userAttribute"}
-		newAdditionalAttribute.Name = "ФД"
+		newAdditionalAttribute.Name = "ФД" + strDop1
 		newAdditionalAttribute.Value = headofcheck[COLFD]
+		newAdditionalAttribute.Print = true
+		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
+	}
+	if orignFD != "" {
+		newAdditionalAttribute := TTag1192_91{Type: "userAttribute"}
+		newAdditionalAttribute.Name = "ФД" + strDop2
+		newAdditionalAttribute.Value = orignFD
 		newAdditionalAttribute.Print = true
 		checkCorr.Items = append(checkCorr.Items, newAdditionalAttribute)
 	}
@@ -2340,6 +2374,16 @@ func checkMistakeInPayments(amountcheck float64, payments map[string]float64) bo
 		resmist = true
 	}
 	return resmist
+}
+
+func extractNumber(s string) string {
+	var number string
+	for _, char := range s {
+		if unicode.IsDigit(char) {
+			number += string(char)
+		}
+	}
+	return number
 }
 
 func getMeasUnitFromStr(s string) string {
