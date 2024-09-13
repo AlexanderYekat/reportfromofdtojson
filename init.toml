@@ -457,13 +457,13 @@ stavkaNDS120 = "НДС 20/120"
 #mark = "марка"
 bindposfieldkassa = "РНМ"
 bindposfieldcheck = "Номер ФД"
-#bindposposfieldcheck = "поле для связывания по позициям в доплнительной таблице"
+bindposposfieldcheck = "name"
 #[fields.others]
-#markother = "марка"
+markother = "Маркировка (тег 1162 или 1163)"
 #markother2 = "ещё столбец марок"
-#bindotherfieldkassa = "поле для связывания по кассе в таблице позций"
-#bindotherfieldcheck = "поле для связывания по чеку в таблице позций"
-#bindotherposfieldcheck = "поле для связывания по позициям в таблице позиций"
+bindotherfieldkassa = "Рег. № ККТ"
+bindotherfieldcheck = "№ ФД"
+bindotherposfieldcheck = "Наименование товара"
 
 [yandex]
 #[fields.kkt]

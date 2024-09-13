@@ -1,6 +1,9 @@
 //go:generate ./resource/goversioninfo.exe -icon=resource/icon.ico -manifest=resource/goversioninfo.exe.manifest
 package main
 
+//checks_header
+//checks_poss
+//checks_other.csv
 import (
 	"bufio"
 	"encoding/base64"
@@ -25,7 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_09_09_01"
+const VERSION_OF_PROGRAM = "2024_09_13_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -1358,7 +1361,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 				//logsmap[LOGINFO_WITHSTD].Println(field)
 			}
 		}
-		if (OFD == "platforma") || (OFD == "firstofd") {
+		if (OFD == "platforma") || (OFD == "firstofd") || (OFD == "taxcom") {
 			//ищем марки в таблице марок
 			logginInFile("ищем марки в дполнительном файле платформы ОФД")
 			logginInFile(fmt.Sprintln("passedPositions before", passedPositions))

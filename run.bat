@@ -1,2 +1,2 @@
-checkcorr2.exe -reverse=true -debug=false -addosnovisexist=false
+checkcorr2.exe -reverse=false -debug=true -addosnovisexist=false
 pause
