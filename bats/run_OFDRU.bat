@@ -1,0 +1,2 @@
+checkcorr2.exe -command getjsons -colFNCh 1 -colRegCh 0 -colKassaNameCh -1 -colFDCh 15 -colFPCh -1 -col_kassir -1 -col_Inn_kassir -1 -colDate 16 -colTypeCheck -1 -colTypeOper -1 -colNal -1 -colBez -1 -colAvPay -1 -colCred -1 -colObm -1 -colSumNDS20 -1 -colName 0 -colQuant 5 -colPrice 4 -colAmountPos 6 -colSummPrepay -1 -colKassaNamePos 22 -colFDPos 32 -colPred 1 -colSpsRash 3 -colFPTovTabl 11 -col_kassirTov 28 -col_Inn_kassirTov -1 -colTypeCheckTov 2 -colNalTob 12 -colBezTov 13 -colAvPayTov 14 -colCredTov 15 -colObmTov 16 -colLinkOnCheck 30
+pause

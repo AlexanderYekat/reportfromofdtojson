@@ -1,0 +1,16 @@
+.vscode/
+*.exe
+*.manifest
+*.pdb
+*.pth
+*.pyc
+*.pyd
+*.pyo
+*.pyx
+checkcorr2.exe
+infiles/
+json/
+logs/
+oldcode.txt
+request/
+resource.syso
