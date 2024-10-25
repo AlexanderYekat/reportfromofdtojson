@@ -14,3 +14,4 @@ logs/
 oldcode.txt
 request/
 resource.syso
+build/
