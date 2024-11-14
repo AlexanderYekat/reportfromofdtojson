@@ -816,10 +816,13 @@ func main() {
 		amountOfCheck := 0.0
 		//logsmap[LOGINFO_WITHSTD].Println("findedPositions=", findedPositions)
 		for _, pos := range findedPositions {
-			spos, errgen := strconv.ParseFloat(pos[COLAMOUNTPOS], 64)
+			amountClean := strings.ReplaceAll(pos[COLAMOUNTPOS], " ", "")
+			spos, errgen := strconv.ParseFloat(amountClean, 64)
 			if errgen != nil {
-				prloc, errlocpr := strconv.ParseFloat(pos[COLPRICE], 64)
-				quloc, errlocqt := strconv.ParseFloat(pos[COLQUANTITY], 64)
+				priceClean := strings.ReplaceAll(pos[COLPRICE], " ", "")
+				prloc, errlocpr := strconv.ParseFloat(priceClean, 64)
+				quantityClean := strings.ReplaceAll(pos[COLQUANTITY], " ", "")
+				quloc, errlocqt := strconv.ParseFloat(quantityClean, 64)
 				if (errlocpr != nil) || (errlocqt != nil) {
 					descrErr := fmt.Sprintf("ошибка (%v, %v) парсинга строки (%v, %v) суммы для чека %v", errlocpr, errlocqt, pos[COLPRICE], pos[COLQUANTITY], checkDescrInfo)
 					logsmap[LOGERROR].Println(descrErr)
@@ -838,7 +841,8 @@ func main() {
 		}
 		mistakesInPayment := false
 		if (OFD == "astral_json") || (OFD == "astral_union") {
-			amountOfCheckinHead, errparseam := strconv.ParseFloat(HeadOfCheck[COLAMOUNTCHECK], 64)
+			amountClean := strings.ReplaceAll(HeadOfCheck[COLAMOUNTCHECK], " ", "")
+			amountOfCheckinHead, errparseam := strconv.ParseFloat(amountClean, 64)
 			if errparseam != nil {
 				descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы для всего чека %v", errparseam, HeadOfCheck[COLAMOUNTCHECK], checkDescrInfo)
 				logsmap[LOGERROR].Println(descrErr)
@@ -896,7 +900,8 @@ func main() {
 			nalch := summsOfPayment[COLNAL]
 			nalstr := input.Text()
 			if notEmptyFloatField(nalstr) {
-				nalch, err = strconv.ParseFloat(nalstr, 64)
+				nalClean := strings.ReplaceAll(nalstr, " ", "")
+				nalch, err = strconv.ParseFloat(nalClean, 64)
 				if err != nil {
 					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для налчиного расчёта", err, nalstr)
 					logsmap[LOGERROR].Println(descrErr)
@@ -907,7 +912,8 @@ func main() {
 			bezch := summsOfPayment[COLBEZ]
 			bezstr := input.Text()
 			if notEmptyFloatField(bezstr) {
-				bezch, err = strconv.ParseFloat(bezstr, 64)
+				bezClean := strings.ReplaceAll(bezstr, " ", "")
+				bezch, err = strconv.ParseFloat(bezClean, 64)
 				if err != nil {
 					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для безналичного расчёта", err, bezstr)
 					logsmap[LOGERROR].Println(descrErr)
@@ -918,7 +924,8 @@ func main() {
 			avnch := summsOfPayment[COLAVANCE]
 			avnstr := input.Text()
 			if notEmptyFloatField(avnstr) {
-				avnch, err = strconv.ParseFloat(avnstr, 64)
+				avnClean := strings.ReplaceAll(avnstr, " ", "")
+				avnch, err = strconv.ParseFloat(avnClean, 64)
 				if err != nil {
 					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для аванса", err, avnstr)
 					logsmap[LOGERROR].Println(descrErr)
@@ -929,7 +936,8 @@ func main() {
 			crdch := summsOfPayment[COLCREDIT]
 			crdstr := input.Text()
 			if notEmptyFloatField(crdstr) {
-				crdch, err = strconv.ParseFloat(crdstr, 64)
+				crdClean := strings.ReplaceAll(crdstr, " ", "")
+				crdch, err = strconv.ParseFloat(crdClean, 64)
 				if err != nil {
 					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для кредита расчёта", err, crdstr)
 					logsmap[LOGERROR].Println(descrErr)
@@ -940,7 +948,8 @@ func main() {
 			vstrch := summsOfPayment[COLVSTRECHPREDST]
 			vstrstr := input.Text()
 			if notEmptyFloatField(vstrstr) {
-				vstrch, err = strconv.ParseFloat(vstrstr, 64)
+				vstrClean := strings.ReplaceAll(vstrstr, " ", "")
+				vstrch, err = strconv.ParseFloat(vstrClean, 64)
 				if err != nil {
 					descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для встречного представления", err, vstrstr)
 					logsmap[LOGERROR].Println(descrErr)
@@ -1603,7 +1612,8 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	checkCorr.Operator.Vatin = headofcheck[COLINNKASSIR]
 	nal := headofcheck[COLNAL]
 	if notEmptyFloatField(nal) {
-		nalch, err := strconv.ParseFloat(nal, 64)
+		nalClean := strings.ReplaceAll(nal, " ", "")
+		nalch, err := strconv.ParseFloat(nalClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для налчиного расчёта %v", err, nal, strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
@@ -1614,7 +1624,8 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	}
 	bez := headofcheck[COLBEZ]
 	if notEmptyFloatField(bez) {
-		bezch, err := strconv.ParseFloat(bez, 64)
+		bezClean := strings.ReplaceAll(bez, " ", "")
+		bezch, err := strconv.ParseFloat(bezClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для безналичного расчёта %v", err, bez, strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
@@ -1626,7 +1637,8 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	avance := headofcheck[COLAVANCE]
 	//logsmap[LOGINFO].Println("avance", avance)
 	if notEmptyFloatField(avance) {
-		avancech, err := strconv.ParseFloat(avance, 64)
+		avanceClean := strings.ReplaceAll(avance, " ", "")
+		avancech, err := strconv.ParseFloat(avanceClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для суммы зачета аванса %v", err, avance, strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
@@ -1637,7 +1649,8 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	}
 	kred := headofcheck[COLCREDIT]
 	if notEmptyFloatField(kred) {
-		kredch, err := strconv.ParseFloat(kred, 64)
+		kredClean := strings.ReplaceAll(kred, " ", "")
+		kredch, err := strconv.ParseFloat(kredClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для суммы оплаты в рассрочку %v", err, kred, strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
@@ -1648,7 +1661,8 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	}
 	obmen := headofcheck[COLVSTRECHPREDST]
 	if notEmptyFloatField(obmen) {
-		obmench, err := strconv.ParseFloat(obmen, 64)
+		obmenClean := strings.ReplaceAll(obmen, " ", "")
+		obmench, err := strconv.ParseFloat(obmenClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для суммы оплаты встречным представлением %v", err, obmen, strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
@@ -1701,21 +1715,24 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 	for _, pos := range poss {
 		newPos := TPosition{Type: "position"}
 		newPos.Name = pos[COLNAME]
-		qch, err := strconv.ParseFloat(pos[COLQUANTITY], 64)
+		quantityClean := strings.ReplaceAll(pos[COLQUANTITY], " ", "")
+		qch, err := strconv.ParseFloat(quantityClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v количества %v", err, pos["Quantity"], strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
 			return checkCorr, descrErr, err
 		}
 		newPos.Quantity = qch
-		prch, err := strconv.ParseFloat(pos[COLPRICE], 64)
+		priceClean := strings.ReplaceAll(pos[COLPRICE], " ", "")
+		prch, err := strconv.ParseFloat(priceClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v цены %v", err, pos[COLPRICE], strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
 			return checkCorr, descrErr, err
 		}
 		newPos.Price = prch
-		sch, err := strconv.ParseFloat(pos[COLAMOUNTPOS], 64)
+		amountClean := strings.ReplaceAll(pos[COLAMOUNTPOS], " ", "")
+		sch, err := strconv.ParseFloat(amountClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы %v", err, pos[COLAMOUNTPOS], strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
@@ -2285,7 +2302,8 @@ func getFloatFromStr(val string) (float64, string, error) {
 	var err error
 	res := 0.0
 	if val != "" {
-		res, err = strconv.ParseFloat(val, 64)
+		valClean := strings.ReplaceAll(val, " ", "")
+		res, err = strconv.ParseFloat(valClean, 64)
 		if err != nil {
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v для суммы оплаты", err, val)
 			logsmap[LOGERROR].Println(descrErr)
