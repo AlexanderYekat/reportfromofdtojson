@@ -28,7 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_10_10_01"
+const VERSION_OF_PROGRAM = "2024_12_26_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -295,7 +295,7 @@ var clearLogsProgramm = flag.Bool("clearlogs", true, "очистить логи 
 var ofdchoice = flag.Int("ofd", 0, "Порядковый номер ОФД в файле настроек init.toml раздел [template.ofd]")
 var email = flag.String("email", "", "email, на которое будут отсылаться все чеки")
 var printonpaper = flag.Bool("print", true, "печатать на бумагу (true) или не печатать (false) чек коорекции")
-var debug = flag.Bool("debug", true, "режим отладки")
+var debug = flag.Bool("debug", false, "режим отладки")
 var fetchalways = flag.Bool("fetchalways", true, "всегда посылать запросы по ссылке, не зависимо от предмета расчета")
 var byPrescription = flag.Bool("prescription", false, "по предписанию (true) или самостоятельно (false)")
 var docNumbOfPrescription = flag.String("docnumbprescr", "", "номер документа предписания налоговой")
@@ -2260,12 +2260,15 @@ func getSposobRash(sposob string) string {
 
 func getOsnFromChernovVal(osnChernvVal string) string {
 	res := ""
+	logginInFile(fmt.Sprintf("osnChernvVal=%v", osnChernvVal))
 	switch strings.ToLower(osnChernvVal) {
 	case "осн":
 		res = "osn"
 	case "усн доход":
 		res = "usnIncome"
 	case "усн доход-расход":
+		res = "usnIncomeOutcome"
+	case "упрощенная доход минус расход":
 		res = "usnIncomeOutcome"
 	case "усн доход - расход":
 		res = "usnIncomeOutcome"
@@ -2274,6 +2277,7 @@ func getOsnFromChernovVal(osnChernvVal string) string {
 	case "патент":
 		res = "patent"
 	}
+	logginInFile(fmt.Sprintf("res=%v", res))
 	return res
 }
 

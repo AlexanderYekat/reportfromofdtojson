@@ -42,6 +42,10 @@ descr = "яндекс ОФД"
 num = 11
 name = "customer"
 descr = "свой формат данных"
+[[template.ofd]]
+num = 12
+name = "yrus"
+descr = "ярус офд"
 
 
 
@@ -110,9 +114,12 @@ bindotherposfieldcheck = "поле для связывания по позици
 
 [conturofd]
 #-colFNCh 0 -colKassaNameCh 1 -colFDCh 2 -colFPCh 3 -col_kassir 4 -colDate 5 -colTypeCheck 6 -colTypeOper 7 -colNal 8 -colBez 9 -colAvPay 10 -colCred 11 -colObm 12 -colSumNDS20 13
+#[fields.kkt]
 fnkkt = "ФН №"
 nameofkkt = "Касса"
-
+#[fields.check]
+date = "Дата чека"
+time = "Время чека"
 fd = "ФД №"
 amountCheck = ""
 nal = "Наличными"
@@ -121,13 +128,12 @@ credit = "Кредит"
 avance = "Аванс"
 vstrechpredst = "Обмен"
 kassir = "Кассир"
-date = "Дата чека"
 osn = "СНО"
 tag1054 = "Тип операции"
 typeCheck = "Тип чека"
 bindheadfieldkassa = "nameofkkt"
 bindheadfieldcheck = "fd"
-
+#[fields.positions]
 name = "Товар. Услуга"
 quantity = "Кол-во"
 price = "Цена, ₽"
@@ -142,6 +148,12 @@ stavkaNDS110 = "#inv$НДС 10/110"
 stavkaNDS120 = "#inv$НДС 20/120"
 bindposfieldkassa = "Название кассы"
 bindposfieldcheck = "ФД №"
+bindposposfieldcheck = "Товар. Услуга"
+#[fields.others]
+markother = "Код товара"
+bindotherfieldkassa = "#analyse$Касса"
+bindotherfieldcheck = "#analyse$Дата чека$Время чека"
+bindotherposfieldcheck = "Товар"
 
 [firstofd]
 #-colFNCh 5 -colRegCh 2 -colKassaNameCh -1 -colFDCh 14 -colFPCh 15 -col_kassir 11 -col_Inn_kassir 12 -colDate 16 -colTypeCheck -1 -colTypeOper 19 -colNal 32 -colBez 33 -colAvPay 34 -colCred 35 -colObm 36 -colSumNDS20 28 -colName 6 -colQuant 8 -colPrice 7 -colAmountPos 9 -colSummPrepay -1 -colKassaNamePos 0 -colFDPos -1 -colPred 5
@@ -583,3 +595,52 @@ bindposfieldcheck = "№ за смену"
 #bindotherfieldkassa = "поле для связывания по кассе в таблице позций"
 #bindotherfieldcheck = "поле для связывания по чеку в таблице позций"
 #bindotherposfieldcheck = "поле для связывания по позициям в таблице позиций"
+
+[yrus]
+regnumkkt = "Регистрационный номер ККТ"
+zavnumkkt = "Заводской номер ККТ"
+fnkkt = "Заводской номер ФН"
+#[fields.check]
+numSm = "Номер смены"
+fd = "Порядковый номер ФД"
+fp = "#inv$Фискальный признак документа"
+#statusofcheck = "Статус чека в ФНС: в карантине или не карантине"
+amountCheck = "Сумма ФД, руб."
+nal = "Сумма наличные, руб."
+bez = "Сумма электронно, руб."
+credit = "Сумма постоплатой (в кредит)"
+avance = "Сумма предоплатой (аванс)"
+vstrechpredst = "Сумма встречным предоставлением"
+kassir = "#inv$Кассир"
+#innkassir = "инн кассира"
+date = "Дата и время ФД" #25-10-2024 19:58:00
+#time = "время чека"
+#nameclient = "Наименование покупателя" #'-
+#innclient = "ИНН покупателя"
+osn = "Применяемая система налогообложения" #Упрощенная доход минус расход
+tag1054 = "Признак расчета" #Приход, Возврат прихода
+typeCheck = "Тип фискального документа" #Кассовый чек, Кассовый чек коррекции
+#link = "ссылка чека"
+bindheadfieldkassa = "regnumkkt"
+bindheadfieldcheck = "fd"
+#[fields.positions]
+name = "Наименование предмета расчета"
+quantity = "Количество"
+price = "Цена за единицу с учетом скидок и наценок"
+amountpos = "Стоимость товара с учетом скидок и наценок"
+predmet = "Признак предмета расчета" #Товар
+sposob = "Признак способа расчета" #ПОЛНЫЙ РАСЧЕТ
+#prizagenta = "Признак агента по предмету расчета"
+#nameofsupl = "наименование поставщика"
+#innofsupl = "ИНН поставщика"
+#telofsupl = "телефон поставщика"
+#stavkaNDSAll = "ставка НДС"
+#Единица измерений товара #шт, кг, м, пара
+stavkaNDS = "Ставка НДС" #НДС не облагается
+#stavkaNDS0 = "столбец суммы ставка НДС 0%"
+#stavkaNDS10 = "столбец суммы ставка НДС 10%"
+#stavkaNDS20 = "столбец суммы ставка НДС 20%"
+#stavkaNDS110 = "столбец суммы ставка НДС 110"
+#stavkaNDS120 = "столбец суммы ставка НДС 120"
+bindposfieldkassa = "Регистрационный номер ККТ"
+bindposfieldcheck = "Порядковый номер ФД"
