@@ -2112,7 +2112,11 @@ func formatfieldname(name string) string {
 func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 	var num int
 	var ok bool
+	//logginInFile(fmt.Sprintf("name=%v", name))
+	//logginInFile(fmt.Sprintf("line=%v", line))
+	//logginInFile(fmt.Sprintf("fieldsnum=%v", fieldsnum))
 	if num, ok = fieldsnum[name]; !ok {
+		//logginInFile(fmt.Sprintf("num=%v, ok=%v", num, ok))
 		return ""
 	}
 	//pref := ""
@@ -2120,6 +2124,7 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 	//	pref = "inv$"
 	//}
 	resVal := line[num]
+	//logginInFile(fmt.Sprintf("resVal=%v", resVal))
 	if name == "date" {
 		resVal = formatMyDate(resVal)
 	}

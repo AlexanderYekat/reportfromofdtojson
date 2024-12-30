@@ -1,2 +1,2 @@
-checkcorr2.exe -debug=true
+checkcorr_2.exe -debug=true
 pause
