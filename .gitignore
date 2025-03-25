@@ -17,3 +17,8 @@ resource.syso
 build/
 ----/
 vendor/
+src/*.json
+src/converted_receipts/
+src/receipts/*
+src/receipts/
+src/input.csv

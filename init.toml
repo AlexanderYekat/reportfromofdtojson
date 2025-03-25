@@ -280,10 +280,12 @@ amountpos = "Стоимость"
 #predmet = "предмет расчета"
 #sposob = "способ расчета"
 nameofsupl = "Наименование поставщика"
+
 innofsupl = "ИНН поставщика"
 telofsupl = "Телефон поставщика"
 ##stavkaNDSAll = "ставка НДС"
 stavkaNDS = "Ставка НДС"
+
 #stavkaNDS0 = "Сумма с НДС 0%"
 #stavkaNDS10 = "НДС 10%"
 #stavkaNDS20 = "НДС 20%"
