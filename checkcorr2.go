@@ -28,7 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2024_12_26_01"
+const VERSION_OF_PROGRAM = "2025_03_25_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -85,11 +85,14 @@ const COLMARK = "mark"
 const COLBINDPOSFIELDKASSA = "bindposfieldkassa"
 const COLBINDPOSFIELDCHECK = "bindposfieldcheck"
 const COLBINDPOSPOSFIELDCHECK = "bindposposfieldcheck"
+const COLBINDMARKSFIELD1CHECK = "bindwithmarkstablefield1check"
+const COLBINDMARKSFIELD2CHECK = "bindwithmarkstablefield2check"
 
 const COLMARKOTHER = "markother"
 const COLMARKOTHER2 = "markother2"
 const COLBINDOTHERKASSS = "bindotherfieldkassa"
 const COLBINDOTHERCHECK = "bindotherfieldcheck"
+const COLBINDOTHERCHECK2 = "bindotherfieldcheck2"
 const COLBINDOTHERPOS = "bindotherposfieldcheck"
 
 const STAVKANDSNONE = "none"
@@ -1390,11 +1393,21 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 				//logsmap[LOGINFO_WITHSTD].Println(field)
 			}
 		}
-		if (OFD == "platforma") || (OFD == "firstofd") || (OFD == "taxcom") {
+		if (OFD == "platforma") || (OFD == "firstofd") || (OFD == "taxcom") || (OFD == "conturofd") {
 			//ищем марки в таблице марок
 			logginInFile("ищем марки в дполнительном файле платформы ОФД")
 			logginInFile(fmt.Sprintln("passedPositions before", passedPositions))
-			marka, err := findMarkInOtherFile(res[currPos][COLBINDPOSFIELDKASSA], res[currPos][COLBINDPOSFIELDCHECK],
+			field1check := res[currPos][COLBINDPOSFIELDCHECK]
+			if fieldsnames[COLBINDMARKSFIELD1CHECK] != "" {
+				//field1check = res[currPos][fieldsnames[COLBINDMARKSFIELD1CHECK]]
+				field1check = res[currPos][COLBINDMARKSFIELD1CHECK]
+			}
+			field2check := ""
+			if fieldsnames[COLBINDMARKSFIELD2CHECK] != "" {
+				//field2check = res[currPos][fieldsnames[COLBINDMARKSFIELD2CHECK]]
+				field2check = res[currPos][COLBINDMARKSFIELD2CHECK]
+			}
+			marka, err := findMarkInOtherFile(res[currPos][COLBINDPOSFIELDKASSA], field1check, field2check,
 				res[currPos][COLBINDPOSPOSFIELDCHECK], fieldsnums, passedPositions)
 			logginInFile(fmt.Sprintln("passedPositions after", passedPositions))
 			if err != nil {
@@ -1453,10 +1466,10 @@ func fillpossitonsbyrefastral(fd, fp, fn string) (map[int]map[string]string, map
 	return res, summsPayment, err
 }
 
-func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int, passedPositions *[]int) (string, error) {
+func findMarkInOtherFile(kassa, doc1, doc2, posnum string, fieldsnums map[string]int, passedPositions *[]int) (string, error) {
 	var marka string
 	//проверяем существует ли файл
-	logstr := fmt.Sprintln("ищме в файле марок:", "kassa", kassa, "doc", doc, "posnum", posnum)
+	logstr := fmt.Sprintln("ищме в файле марок:", "kassa", kassa, "doc1", doc1, "doc2", doc2, "posnum", posnum)
 	logginInFile(logstr)
 	if fileofmarksexist, _ := doesFileExist(DIRINFILES + "checks_other.csv"); !fileofmarksexist {
 		//logginInFile("файл марок не существует")
@@ -1485,21 +1498,23 @@ func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int, p
 		if currLine == 1 {
 			continue
 		}
-		logginInFile(fmt.Sprintln("passedPositions=", *passedPositions))
-		logginInFile(fmt.Sprintln("currLine=", currLine))
+		//logginInFile(fmt.Sprintln("passedPositions=", *passedPositions))
+		//logginInFile(fmt.Sprintln("currLine=", currLine))
 		found := slices.Contains(*passedPositions, currLine)
-		logginInFile(fmt.Sprintln("found", found))
+		//logginInFile(fmt.Sprintln("found", found))
 		if found {
 			continue
 		}
 		//logstr := fmt.Sprintln(line)
 		//logginInFile(logstr)
 		kassaother := getfieldval(line, fieldsnums, COLBINDOTHERKASSS)
-		docother := getfieldval(line, fieldsnums, COLBINDOTHERCHECK)
+		docother1 := getfieldval(line, fieldsnums, COLBINDOTHERCHECK)
+		docother2 := getfieldval(line, fieldsnums, COLBINDOTHERCHECK2)
 		posnumother := getfieldval(line, fieldsnums, COLBINDOTHERPOS)
 
 		//logsmap[LOGINFO_WITHSTD].Println("kassa", kassa)
-		//logsmap[LOGINFO_WITHSTD].Println("doc", doc)
+		//logsmap[LOGINFO_WITHSTD].Println("doc1", doc1)
+		//logsmap[LOGINFO_WITHSTD].Println("doc2", doc2)
 		//logsmap[LOGINFO_WITHSTD].Println("posnum", posnum)
 		//logsmap[LOGINFO_WITHSTD].Println("kassaother", kassaother)
 		//logsmap[LOGINFO_WITHSTD].Println("docother", docother)
@@ -1508,11 +1523,13 @@ func findMarkInOtherFile(kassa, doc, posnum string, fieldsnums map[string]int, p
 		//logsmap[LOGINFO_WITHSTD].Println("kassa=kassaother", kassa == kassaother)
 		//logsmap[LOGINFO_WITHSTD].Println("doc=docother", doc == docother)
 		//logsmap[LOGINFO_WITHSTD].Println("posnum=posnumother", posnum == posnumother)
+		//logsmap[LOGINFO_WITHSTD].Println("doc1=docother", doc1 == docother)
+		//logsmap[LOGINFO_WITHSTD].Println("doc2=docother2", doc2 == docother2)
 
 		//logsmap[LOGINFO_WITHSTD].Println("(kassaother != kassa) || (docother != doc) || (posnumother != posnum)", (kassaother != kassa) || (docother != doc) || (posnumother != posnum))
 		//logstr = fmt.Sprintln("строка в файле марок:", "kassaother", kassaother, "docother", docother, "posnumother", posnumother)
 		//logginInFile(logstr)
-		if (kassaother != kassa) || (docother != doc) || (posnumother != posnum) {
+		if (kassaother != kassa) || (docother1 != doc1) || ((docother2 != "") && (docother2 != doc2)) || (posnumother != posnum) {
 			//logginInFile("не подходит строка")
 			continue
 		}

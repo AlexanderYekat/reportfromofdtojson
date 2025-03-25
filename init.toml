@@ -104,12 +104,15 @@ mark = "марка"
 bindposfieldkassa = "поле для связывания по кассе в таблице позций"
 bindposfieldcheck = "поле для связывания по чеку в таблице позций"
 bindposposfieldcheck = "поле для связывания по позициям в доплнительной таблице"
+bindwithmarkstablefield1check = "поле для свзывания с таблицей марок по чеку"
+bindwithmarkstablefield2check = "ещё поле для свзывания с таблицей марок по чеку"
 
 [fields.others]
 markother = "марка"
 markother2 = "ещё столбец марок"
 bindotherfieldkassa = "поле для связывания по кассе в таблице позций"
 bindotherfieldcheck = "поле для связывания по чеку в таблице позций"
+bindotherfieldcheck2 = "ещё поле для связывания по чеку в таблице позций"
 bindotherposfieldcheck = "поле для связывания по позициям в таблице позиций"
 
 [conturofd]
@@ -121,6 +124,7 @@ nameofkkt = "Касса"
 date = "Дата чека"
 time = "Время чека"
 fd = "ФД №"
+fp = "ФПД"
 amountCheck = ""
 nal = "Наличными"
 bez = "Безналичными"
@@ -146,13 +150,17 @@ stavkaNDS10 = "#inv$НДС 10%"
 stavkaNDS20 = "#inv$НДС 20%"
 stavkaNDS110 = "#inv$НДС 10/110"
 stavkaNDS120 = "#inv$НДС 20/120"
+#[fields.positions]
 bindposfieldkassa = "Название кассы"
 bindposfieldcheck = "ФД №"
 bindposposfieldcheck = "Товар. Услуга"
+bindwithmarkstablefield1check = "Дата"
+bindwithmarkstablefield2check = "Время"
 #[fields.others]
 markother = "Код товара"
-bindotherfieldkassa = "#analyse$Касса"
-bindotherfieldcheck = "#analyse$Дата чека$Время чека"
+bindotherfieldkassa = "Касса"
+bindotherfieldcheck = "Дата чека"
+bindotherfieldcheck2 = "Время чека"
 bindotherposfieldcheck = "Товар"
 
 [firstofd]
