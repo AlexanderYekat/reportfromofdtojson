@@ -28,7 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2025_03_25_01"
+const VERSION_OF_PROGRAM = "2025_03_25_06"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -77,6 +77,8 @@ const COLTELOFSUPPLIER = "telofsupl"
 
 const COLSTAVKANDS = "stavkaNDS"
 const COLSTAVKANDS0 = "stavkaNDS0"
+const COLSTAVKANDS5 = "stavkaNDS5"
+const COLSTAVKANDS7 = "stavkaNDS7"
 const COLSTAVKANDS10 = "stavkaNDS10"
 const COLSTAVKANDS20 = "stavkaNDS20"
 const COLSTAVKANDS110 = "stavkaNDS110"
@@ -97,6 +99,8 @@ const COLBINDOTHERPOS = "bindotherposfieldcheck"
 
 const STAVKANDSNONE = "none"
 const STAVKANDS0 = "vat0"
+const STAVKANDS5 = "vat5"
+const STAVKANDS7 = "vat7"
 const STAVKANDS10 = "vat10"
 const STAVKANDS20 = "vat20"
 const STAVKANDS110 = "vat110"
@@ -306,6 +310,8 @@ var measurementUnitOfFracQuantSimple = flag.String("fracquantunitsimple", "кг"
 var measurementUnitOfFracQuantMark = flag.String("fracquantunitmark", "кг", "мера измерения дробного количества товара с маркой (кг, л, грамм, иная)")
 var checkdoublepos = flag.Bool("checkdoule", false, "проверять на задвоение позиции")
 var reverseoper = flag.Bool("reverse", false, "сделать операцию обратной оперцаии чека (приход станет возратом и наоборот)")
+var propsukatByCondition = flag.Bool("propsukatbycondition", false, "пропускать по условию, жёстко прописанному в коде, для некоторых случваев")
+var changeNDSCustom = flag.Bool("changendscustom", false, "менять НДС кастомно - прописано в коде как")
 var addOsnovaniyIfExist = flag.Bool("addosnovisexist", false, "добавлять основание самого первого чека если оно существует")
 
 var FieldsNums map[string]int
@@ -636,10 +642,26 @@ func main() {
 			logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как в ней не опредлена касса", currLine, line)
 			continue
 		}
+
+		//произвольное условие прописанное жёстко в коде для отдельных случаев
+		if *propsukatByCondition {
+			logsmap[LOGINFO].Printf("FieldsNums=%v", FieldsNums)
+			logsmap[LOGINFO].Printf("COLSTAVKANDS5=%v", COLSTAVKANDS5)
+			logsmap[LOGINFO].Printf("FieldsNums[COLSTAVKANDS5]=%v", FieldsNums[COLSTAVKANDS5])
+			logsmap[LOGINFO].Printf("line[FieldsNums[COLSTAVKANDS5]]=%v", line[FieldsNums[COLSTAVKANDS5]])
+			if _, ok := FieldsNums[COLSTAVKANDS5]; ok {
+				if line[FieldsNums[COLSTAVKANDS5]] == "" || line[FieldsNums[COLSTAVKANDS5]] == "0" {
+					logsmap[LOGINFO].Printf("строка №%v пропущена, так сумма НДС 5%% равно \"%v\" нулю", currLine, line[FieldsNums[COLSTAVKANDS5]])
+					logsmap[LOGERROR].Printf("строка №%v пропущена, так сумма НДС 5%% равно \"%v\" нулю", currLine, line[FieldsNums[COLSTAVKANDS5]])
+					continue
+				}
+			}
+		}
+
 		//проверяем статус чека в ФНС
-		if num, ok := FieldsNums[COLSTATUSINFNS]; ok {
+		if num, ok := FieldsNums[COLSTATUSINFNS]; ok && !*propsukatByCondition {
 			if (!strings.Contains(strings.ToUpper(line[num]), strings.ToUpper("Ошибка"))) && (!strings.Contains(strings.ToUpper(line[num]), strings.ToUpper("ошибки"))) {
-				logsmap[LOGINFO].Printf("1строка №%v \"%v\" пропущена, так как чек принят ФНС", currLine, line)
+				logsmap[LOGINFO].Printf("строка №%v \"%v\" пропущена, так как чек принят ФНС", currLine, line)
 				logsmap[LOGERROR].Printf("строка №%v \"%v\" пропущена, так как чек принят ФНС", currLine, line)
 				continue
 			}
@@ -858,7 +880,7 @@ func main() {
 				continue
 			}
 		}
-		if OFD == "ofdru" {
+		if OFD == "ofdru" && strings.TrimSpace(HeadOfCheck[COLLINK]) != "" {
 			mistakesInPayment = checkMistakeInPayments(amountOfCheck, summsOfPayment)
 			if mistakesInPayment {
 				logginInFile("ошибка в суммах оплат, пытаемся получить данные из ссылки чека")
@@ -994,7 +1016,7 @@ func main() {
 		analyzeComlite := true
 		strloggin := fmt.Sprintln("countOfPositions=", countOfPositions, "OFD=", OFD)
 		logginInFile(strloggin)
-		if (countOfPositions > 0) && (OFD == "ofdru") { //если для чека были найдены позиции
+		if (countOfPositions > 0) && (OFD == "ofdru") && (strings.TrimSpace(HeadOfCheck[COLLINK]) != "") { //если для чека были найдены позиции
 			logginInFile("проверка требований к марке")
 			neededGetMarks := false
 			for _, pos := range findedPositions {
@@ -1322,7 +1344,7 @@ func findPositions(valbindkassainhead, valbindcheckinhead string, fieldsnames ma
 		if currLine == 1 {
 			continue
 		}
-		if OFD == "sbis" || OFD == "yandex" { //|| OFD == "customer" {
+		if OFD == "sbis" { //|| OFD == "yandex" { //|| OFD == "customer" {
 			kassaname := getfieldval(line, fieldsnums, COLBINDPOSFIELDKASSA)
 			docnum := getfieldval(line, fieldsnums, COLBINDPOSFIELDCHECK)
 			logginInFile(fmt.Sprintf("kassaname=%v", kassaname))
@@ -1784,6 +1806,10 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		stavkaNDSStr := STAVKANDSNONE
 		if pos[COLSTAVKANDS20] != "" {
 			stavkaNDSStr = STAVKANDS20
+		} else if pos[COLSTAVKANDS5] != "" {
+			stavkaNDSStr = STAVKANDS5
+		} else if pos[COLSTAVKANDS7] != "" {
+			stavkaNDSStr = STAVKANDS7
 		} else if pos[COLSTAVKANDS10] != "" {
 			stavkaNDSStr = STAVKANDS10
 		} else if pos[COLSTAVKANDS0] != "" {
@@ -1799,6 +1825,10 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 				stavkaNDSStr = STAVKANDS20
 			} else if strings.Contains(pos[COLSTAVKANDS], "10") {
 				stavkaNDSStr = STAVKANDS10
+			} else if strings.Contains(pos[COLSTAVKANDS], "5") {
+				stavkaNDSStr = STAVKANDS5
+			} else if strings.Contains(pos[COLSTAVKANDS], "7") {
+				stavkaNDSStr = STAVKANDS7
 			} else if strings.Contains(pos[COLSTAVKANDS], "0%") || strings.Contains(pos[COLSTAVKANDS], "0 %") {
 				stavkaNDSStr = STAVKANDS0
 			}
@@ -1806,6 +1836,11 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			//	logsmap[LOGERROR].Printf("требуется доработка программы для учёта ставки НДС %v в чеке", pos[COLSTAVKANDS])
 			//}
 		}
+
+		if *changeNDSCustom {
+			stavkaNDSStr = STAVKANDSNONE
+		}
+
 		newPos.Tax.Type = stavkaNDSStr
 		postDataExist := false
 		if pos[COLPRIZAGENTA] != "" {
@@ -2158,6 +2193,10 @@ func getfieldval(line []string, fieldsnum map[string]int, name string) string {
 				//	resVal = resVal
 				case "stavkaNDS0":
 					resVal = STAVKANDS0
+				case "stavkaNDS5":
+					resVal = STAVKANDS5
+				case "stavkaNDS7":
+					resVal = STAVKANDS7
 				case "stavkaNDS10":
 					resVal = STAVKANDS10
 				case "stavkaNDS20":
