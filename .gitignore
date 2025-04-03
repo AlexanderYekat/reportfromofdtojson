@@ -22,3 +22,5 @@ src/converted_receipts/
 src/receipts/*
 src/receipts/
 src/input.csv
+*checkcorr-return.lnk
+*checkcorr*.lnk*

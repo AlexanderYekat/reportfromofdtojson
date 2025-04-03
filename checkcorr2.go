@@ -312,6 +312,7 @@ var checkdoublepos = flag.Bool("checkdoule", false, "проверять на з�
 var reverseoper = flag.Bool("reverse", false, "сделать операцию обратной оперцаии чека (приход станет возратом и наоборот)")
 var propsukatByCondition = flag.Bool("propsukatbycondition", false, "пропускать по условию, жёстко прописанному в коде, для некоторых случваев")
 var changeNDSCustom = flag.Bool("changendscustom", false, "менять НДС кастомно - прописано в коде как")
+var changeSNOCustom = flag.Bool("changensnocustom", false, "менять СНО - прописано в коде как")
 var addOsnovaniyIfExist = flag.Bool("addosnovisexist", false, "добавлять основание самого первого чека если оно существует")
 
 var FieldsNums map[string]int
@@ -1617,6 +1618,9 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 		return checkCorr, descError, errors.New("ошибка определения типа чека коррекции")
 	}
 	osnLoc := getOsnFromChernovVal(headofcheck[COLOSN])
+	if *changeSNOCustom {
+		osnLoc = "usnIncomeOutcome"
+	}
 	if osnLoc != "" {
 		checkCorr.TaxationType = osnLoc
 	}
