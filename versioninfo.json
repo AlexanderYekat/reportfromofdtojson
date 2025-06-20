@@ -2,14 +2,14 @@
     "FixedFileInfo": {
         "FileVersion": {
             "Major": 2025,
-            "Minor": 3,
-            "Patch": 25,
+            "Minor": 5,
+            "Patch": 8,
             "Build": 1
         },
         "ProductVersion": {
             "Major": 2025,
-            "Minor": 3,
-            "Patch": 25,
+            "Minor": 5,
+            "Patch": 8,
             "Build": 1
         },
         "FileFlagsMask": "3f",
@@ -29,7 +29,7 @@
         "OriginalFilename": "checkcorr2.exe",
         "PrivateBuild": "",
         "ProductName": "",
-        "ProductVersion": "v2025.03.25.01",
+        "ProductVersion": "v2025.05.08.01",
         "SpecialBuild": ""
     },
     "VarFileInfo": {

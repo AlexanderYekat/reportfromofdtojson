@@ -28,7 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const VERSION_OF_PROGRAM = "2025_03_25_06"
+const VERSION_OF_PROGRAM = "2025_05_08_01"
 const NAME_OF_PROGRAM = "формирование json заданий чеков коррекции на основании отчетов из ОФД (xsl-csv)"
 
 const EMAILFIELD = "email"
@@ -1780,6 +1780,9 @@ func generateCheckCorrection(headofcheck map[string]string, poss map[int]map[str
 			descrErr := fmt.Sprintf("ошибка (%v) парсинга строки %v суммы %v", err, pos[COLAMOUNTPOS], strInfoAboutCheck)
 			logsmap[LOGERROR].Println(descrErr)
 			return checkCorr, descrErr, err
+		}
+		if sch == 0 {
+			sch = math.Round(qch*prch*1000) / 1000
 		}
 		newPos.Amount = sch
 		if prch != 0 {

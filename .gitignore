@@ -24,3 +24,17 @@ src/receipts/
 src/input.csv
 *checkcorr-return.lnk
 *checkcorr*.lnk*
+src/atoljsonstaxcom/
+src/convert_taxcom_to_atol_errors.log
+src/*.csv
+src/*.log
+src/posikOshibke/
+src/printed.txt
+src/rezerv/
+src/taxcomPDF_neRaspasing/
+src/taxcomPDF_neRaspasing2/
+src/taxcomePDF/
+src/taxcomePDF2/
+src/taxcomjsons/
+src/taxcomjsons2/
+output.json

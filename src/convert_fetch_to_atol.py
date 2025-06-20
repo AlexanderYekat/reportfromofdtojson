@@ -85,12 +85,60 @@ def stornoTypeCheck(typecheck):
         return typecheck
 
 def change_tax_type():
-    return "patent "
+    return "patent"
 
 def convert_fetch_to_atol(input_json, storno=False, changeOSN=False):
     """Конвертирует JSON из формата fetch в формат atol"""
     doc = input_json["Document"]
+
+    SummNal = doc["Amount_Cash"] / 100
+    #if SummNal == 0:
+    #    return None
+
+    SummBeznal = doc["Amount_ECash"] / 100
+    SummNal = doc["Amount_Cash"] / 100
+    SummAvance = doc["Amount_Advance"] / 100
+    #SummNal = 0
+    #SummAvance = 0
+    #SummBeznal = doc["Amount_Total"] / 100
+
+    #if SummNal == 0:
+    #    return None
     
+    # Определяем тип оплаты
+    if SummBeznal == 0:
+        payments = [
+            {
+                "type": "cash",
+                "sum": SummNal
+            }
+        ]
+    else:   
+        if SummNal == 0:
+            payments = [
+                {
+                    "type": "electronically",
+                    "sum": SummBeznal
+                }
+            ]   
+        else:
+            payments = [
+                {
+                    "type": "electronically",
+                    "sum": SummBeznal
+                },
+                {
+                    "type": "cash",
+                    "sum": SummNal
+                }
+            ]
+
+    if SummAvance > 0:
+        payments.append({
+            "type": "advance",
+            "sum": SummAvance
+        })
+
     total_amount = doc["Amount_Total"] / 100  # Конвертируем копейки в рубли
     
     # Конвертируем обычные позиции
@@ -110,7 +158,7 @@ def convert_fetch_to_atol(input_json, storno=False, changeOSN=False):
         {
             "type": "userAttribute",
             "name": "ФД",
-            "value": input_json["DocNumber"],  # Номер ФД из документа
+            "value": str(input_json["DocNumber"]),  # Номер ФД из документа
             "print": True
         },
         {
@@ -130,12 +178,7 @@ def convert_fetch_to_atol(input_json, storno=False, changeOSN=False):
             "name": doc["Operator"]
         },
         "items": additional_items + regular_items,
-        "payments": [
-            {
-                "type": "electronically",
-                "sum": total_amount
-            }
-        ],
+        "payments": payments,
         "total": total_amount
     }
     
@@ -163,6 +206,9 @@ def process_directory(storno=False, changeOSN=False):
                 
                 # Конвертируем данные
                 converted_data = convert_fetch_to_atol(input_data, storno, changeOSN)
+                
+                if converted_data is None:
+                    continue
                 
                 # Сохраняем результат
                 with open(output_path, 'w', encoding='utf-8') as f:

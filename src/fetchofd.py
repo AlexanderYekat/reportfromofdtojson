@@ -7,6 +7,7 @@ import pandas as pd
 
 def extract_raw_id(url_string):
     # Извлекаем RawId из строки вида '"=""https://ofd.ru/Document/RenderDoc?RawId=xxx"""'
+    # Извлекаем RawId из строки вида '=ГИПЕРССЫЛКА("https://ofd.ru/Document/RenderDoc?RawId=671115e6-1b3c-5e94-bac3-ecab745d390b";"Перейти")'
     match = re.search(r'RawId=([a-f0-9-]+)', url_string)
     if match:
         return match.group(1)
